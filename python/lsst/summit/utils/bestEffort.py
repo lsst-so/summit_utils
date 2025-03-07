@@ -26,7 +26,7 @@ from typing import Any
 import lsst.afw.image as afwImage
 import lsst.daf.butler as dafButler
 from lsst.daf.butler.registry import ConflictingDefinitionError
-from lsst.ip.isr import IsrTask
+from lsst.ip.isr import IsrTaskLSST
 from lsst.pex.config import Config
 from lsst.summit.utils.butlerUtils import getLatissDefaultCollections
 from lsst.summit.utils.quickLook import QuickLookIsrTask
@@ -58,7 +58,7 @@ class BestEffortIsr:
         Extra collections to add to the butler init. Collections are prepended.
     defaultExtraIsrOptions : `dict`, optional
         A dict of extra isr config options to apply. Each key should be an
-    attribute of an isrTaskConfigClass.
+    attribute of an isrTaskLSSTConfigClass.
     doRepairCosmics : `bool`, optional
         Repair cosmic ray hits?
     doWrite : `bool`, optional
@@ -238,7 +238,7 @@ class BestEffortIsr:
             raise RuntimeError(f"Failed to retrieve raw for exp {dataId}") from None
 
         # default options that are probably good for most engineering time
-        isrConfig = IsrTask.ConfigClass()
+        isrConfig = IsrTaskLSST.ConfigClass()
         with importlib.resources.path("lsst.summit.utils", "resources/config/quickLookIsr.py") as cfgPath:
             isrConfig.load(cfgPath)
 
