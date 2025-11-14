@@ -5,6 +5,6 @@ config.doSaturation = True  # saturation very important for roundness measuremen
 config.brighterFatterMaxIter = 2  # Uncomment this to remove test warning
 config.doDeferredCharge = False  # no calib for this yet
 config.doBootstrap = False
-config.doApplyGains = False
+config.doApplyGains = True
 config.doSuspect = False
 config.defaultSaturationSource = "CAMERAMODEL"
