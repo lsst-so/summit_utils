@@ -23,7 +23,6 @@ import dataclasses
 import importlib.resources
 from typing import Any
 
-import numpy as np
 
 import lsst.afw.cameraGeom as camGeom
 import lsst.afw.image as afwImage
@@ -103,6 +102,9 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         # Note that this is not an instance of the IsrTask class, but the class
         # itself, which is then instantiated later on, in the run() method,
         # with the dynamically generated config.
+        # import pdb; pdb.set_trace()
+        if IsrTaskLSST._DefaultName != 'isrLSST':
+            raise RuntimeError("QuickLookIsrTask should now always use IsrTaskLSST for processing.")
         self.isrTask = IsrTaskLSST
 
     def run(
@@ -113,22 +115,14 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         bias: afwImage.Exposure | None = None,
         dark: afwImage.Exposure | None = None,
         flat: afwImage.Exposure | None = None,
-        fringes: afwImage.Exposure | None = None,
         defects: ipIsr.Defects | None = None,
         linearizer: ipIsr.linearize.LinearizeBase | None = None,
         crosstalk: ipIsr.crosstalk.CrosstalkCalib | None = None,
-        bfKernel: np.ndarray | None = None,
-        newBFKernel: ipIsr.BrighterFatterKernel | None = None,
+        bfKernel: ipIsr.BrighterFatterKernel | None = None,
         ptc: ipIsr.PhotonTransferCurveDataset | None = None,
-        crosstalkSources: list | None = None,
         isrBaseConfig: ipIsr.IsrTaskLSSTConfig | None = None,
-        filterTransmission: afwImage.TransmissionCurve | None = None,
-        opticsTransmission: afwImage.TransmissionCurve | None = None,
-        strayLightData: Any | None = None,
-        sensorTransmission: afwImage.TransmissionCurve | None = None,
-        atmosphereTransmission: afwImage.TransmissionCurve | None = None,
         deferredChargeCalib: Any | None = None,
-        illumMaskedImage: afwImage.MaskedImage | None = None,
+        gainCorrection: ipIsr.IsrCalib | None = None,
     ) -> pipeBase.Struct:
         """Run isr and cosmic ray repair using, doing as much isr as possible.
 
@@ -162,41 +156,17 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
             Functor for linearization.
         crosstalk : `lsst.ip.isr.crosstalk.CrosstalkCalib`, optional
             Calibration for crosstalk.
-        bfKernel : `numpy.ndarray`, optional
-            Brighter-fatter kernel.
-        newBFKernel : `ipIsr.BrighterFatterKernel`, optional
+        bfKernel : `ipIsr.BrighterFatterKernel`, optional
             New Brighter-fatter kernel.
         ptc : `lsst.ip.isr.PhotonTransferCurveDataset`, optional
             Photon transfer curve dataset, with, e.g., gains
             and read noise.
-        crosstalkSources : `list`, optional
-            List of possible crosstalk sources.
+        cti : `lsst.ip.isr.DeferredChargeCalib`, optional
+            Charge transfer inefficiency correction calibration.
         isrBaseConfig : `lsst.ip.isr.IsrTaskLSSTConfig`, optional
             An isrTask config to act as the base configuration. Options which
             involve applying a calibration product are ignored, but this allows
             for the configuration of e.g. the number of overscan columns.
-        filterTransmission : `lsst.afw.image.TransmissionCurve`
-            A ``TransmissionCurve`` that represents the throughput of the
-            filter itself, to be evaluated in focal-plane coordinates.
-        opticsTransmission: `lsst.afw.image.TransmissionCurve`, optional
-            A ``TransmissionCurve`` that represents the throughput of the,
-            optics, to be evaluated in focal-plane coordinates.
-        strayLightData : `object`, optional
-            Opaque object containing calibration information for stray-light
-            correction.  If `None`, no correction will be performed.
-        sensorTransmission : `lsst.afw.image.TransmissionCurve`
-            A ``TransmissionCurve`` that represents the throughput of the
-            sensor itself, to be evaluated in post-assembly trimmed detector
-            coordinates.
-        atmosphereTransmission : `lsst.afw.image.TransmissionCurve`
-            A ``TransmissionCurve`` that represents the throughput of the
-            atmosphere, assumed to be spatially constant.
-        illumMaskedImage : `lsst.afw.image.MaskedImage`, optional
-            Illumination correction image.
-        bfGains : `dict` of `float`, optional
-            Gains used to override the detector's nominal gains for the
-            brighter-fatter correction. A dict keyed by amplifier name for
-            the detector in question.
 
         Returns
         -------
@@ -219,6 +189,8 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         isrConfig.doLinearize = False
         isrConfig.doCrosstalk = False
         isrConfig.doBrighterFatter = False
+        isrConfig.doDeferredCharge = False
+        isrConfig.doCorrectGains = False
 
         if bias:
             isrConfig.doBias = True
@@ -244,26 +216,31 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
             isrConfig.doCrosstalk = True
             self.log.info("Running with crosstalk correction")
 
-        if newBFKernel is not None:
-            bfGains = newBFKernel.gain
-            isrConfig.doBrighterFatter = True
-            self.log.info("Running with new brighter-fatter correction")
-        else:
-            bfGains = None
-
-        if bfKernel is not None and bfGains is None:
+        if bfKernel is not None:
             isrConfig.doBrighterFatter = True
             self.log.info("Running with brighter-fatter correction")
 
+        if deferredChargeCalib is not None:
+            isrConfig.doDeferredCharge = True
+            self.log.info("Running with CTI correction")
+
+        if gainCorrection is not None:
+            isrConfig.doCorrectGains = True
+            self.log.info("Running with Gain corrections")
+
+        if ptc is None:
+            raise RuntimeError("IsrTaskLSST requires a PTC.")
+
         isrTask = self.isrTask(config=isrConfig)
 
-        if fringes:
-            # Must be run after isrTask is instantiated.
-            isrTask.fringe.loadFringes(
-                fringes,
-                expId=ccdExposure.info.id,
-                assembler=isrTask.assembleCcd if isrConfig.doAssembleIsrExposures else None,
-            )
+        # DM-47959: TODO Add fringe correction to IsrTaskLSST.
+        # if fringes:
+        #     # Must be run after isrTask is instantiated.
+        #     isrTask.fringe.loadFringes(
+        #         fringes,
+        #         expId=ccdExposure.info.id,
+        #         assembler=isrTask.assembleCcd if isrConfig.doAssembleIsrExposures else None,
+        #     )
 
         result = isrTask.run(
             ccdExposure,
@@ -271,21 +248,13 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
             bias=bias,
             dark=dark,
             flat=flat,
-            fringes=fringes,
             defects=defects,
             linearizer=linearizer,
             crosstalk=crosstalk,
             bfKernel=bfKernel,
-            bfGains=bfGains,
             ptc=ptc,
-            crosstalkSources=crosstalkSources,
-            filterTransmission=filterTransmission,
-            opticsTransmission=opticsTransmission,
-            sensorTransmission=sensorTransmission,
-            atmosphereTransmission=atmosphereTransmission,
-            strayLightData=strayLightData,
             deferredChargeCalib=deferredChargeCalib,
-            illumMaskedImage=illumMaskedImage,
+            gainCorrection=gainCorrection,
         )
 
         postIsr = result.exposure
