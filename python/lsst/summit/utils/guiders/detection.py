@@ -37,8 +37,8 @@ import pandas as pd
 from astropy.nddata import Cutout2D
 from astropy.stats import sigma_clipped_stats
 
+import lsst.afw.detection as afwDetect
 from lsst.afw.image import ExposureF, ImageF, MaskedImageF
-from lsst.summit.utils.utils import detectObjectsInExp
 
 from .reading import GuiderData
 
@@ -277,6 +277,7 @@ def runSourceDetection(
     cutOutSize: int = 25,
     apertureRadius: int = 5,
     gain: float = 1.0,
+    starMaskThreshold: float = 20000.0,
 ) -> pd.DataFrame:
     """
     Detect sources in an image and measure their properties.
@@ -293,6 +294,9 @@ def runSourceDetection(
         Aperture radius in pixels for photometry.
     gain : `float`
         Detector gain (e-/ADU).
+    starMaskThreshold : `float`
+        Pixel count threshold for masking bright stars when computing the
+        background standard deviation. Pixels above this value are excluded.
 
     Returns
     -------
@@ -303,12 +307,30 @@ def runSourceDetection(
     exposure = ExposureF(MaskedImageF(ImageF(image)))
 
     # Step 2: Detect sources
-    # we assume that we have bright stars
-    # filter out stamps with no stars
+    # We use Threshold.VALUE with np.std() instead of Threshold.STDEV because
+    # STDEV uses STDEVCLIP internally which can return 0 for some guider
+    # images, causing FootprintSet to fail with "St. dev. must be > 0".
+    footprints = None
     if not isBlankImage(image):
-        footprints = detectObjectsInExp(exposure, nSigma=threshold)
-    else:
-        footprints = None
+        median = np.nanmedian(exposure.image.array)
+        exposure.image -= median
+        # Mask bright stars when computing std to get background noise estimate
+        bgPixels = exposure.image.array[exposure.image.array < starMaskThreshold]
+        if len(bgPixels) == 0:
+            raise ValueError(
+                f"No pixels below starMaskThreshold={starMaskThreshold}. "
+                "All pixels are saturated or threshold is too low."
+            )
+        imageStd = np.std(bgPixels)
+        if imageStd <= 0:
+            raise ValueError(
+                f"Background standard deviation is {imageStd}. "
+                "Image may be flat or starMaskThreshold may need adjustment."
+            )
+        absThreshold = threshold * imageStd
+        thresh = afwDetect.Threshold(absThreshold, afwDetect.Threshold.VALUE)
+        footprints = afwDetect.FootprintSet(exposure.getMaskedImage(), thresh, "DETECTED", 10)
+        exposure.image += median
 
     if not footprints:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
