@@ -373,9 +373,11 @@ def measureStarOnStamp(
     star.runAperturePhotometry(dataBkgSub, apertureRadius, gain=gain, bkgStd=bkgStd)
 
     # 4)  Add centroid and shape in amplifier roi coordinates
-    # GalSim uses 1-based indexing where (1,1) is the center of pixel [0,0].
-    # Matplotlib's imshow with extent=(0,w,0,h) places pixel centers at half-integers.
-    # To align: subtract 0.5 to convert GalSim coords to matplotlib pixel-center coords.
+    # GalSim uses 1-based indexing where (1,1) is the 
+    # center of pixel [0,0].Matplotlib's imshow with 
+    # extent=(0,w,0,h) places pixel centers at half-integers.
+    # To align: subtract 0.5 to convert GalSim coords to 
+    # matplotlib pixel-center coords.
     star.xroi += cutout.xmin_original - 0.5
     star.yroi += cutout.ymin_original - 0.5
     return star
