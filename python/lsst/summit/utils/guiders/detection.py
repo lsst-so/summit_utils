@@ -87,6 +87,11 @@ class GuiderStarTrackerConfig:
         Aperture size in arcseconds for star detection.
     gain : `float`
         Gain factor for the guider data, used in flux calculations.
+    nFallbackStamps : `int`
+        Number of individual stamps to sample when coadd detection fails.
+    peakSnrThreshold : `float`
+        Minimum peak pixel SNR to consider a stamp non-empty during
+        single-stamp fallback detection.
     """
 
     minSnr: float = 10.0
@@ -96,6 +101,8 @@ class GuiderStarTrackerConfig:
     cutOutSize: int = 50
     aperSizeArcsec: float = 5.0
     gain: float = 1.0
+    nFallbackStamps: int = 10
+    peakSnrThreshold: float = 5.0
 
 
 def trackStarAcrossStamp(
@@ -597,6 +604,69 @@ def makeEllipticalGaussianStar(
     return image
 
 
+def _detectOnSingleStamps(
+    guiderData: GuiderData,
+    guiderName: str,
+    config: GuiderStarTrackerConfig,
+    apertureRadius: int,
+    log: logging.Logger,
+) -> pd.DataFrame:
+    """Try source detection on individual stamps when coadd detection fails.
+
+    Samples up to ``config.nFallbackStamps`` stamps evenly spread across
+    the sequence. Returns the detection with the highest SNR, or an empty
+    DataFrame if no star is found on any stamp.
+
+    A stamp is considered truly empty if its peak pixel SNR
+    (max - median) / std is below ``config.peakSnrThreshold``.
+    """
+    nStamps = len(guiderData)
+    if nStamps == 0:
+        return pd.DataFrame(columns=DEFAULT_COLUMNS)
+
+    nSample = min(config.nFallbackStamps, nStamps)
+    indices = np.linspace(0, nStamps - 1, nSample, dtype=int)
+
+    bestSources = pd.DataFrame(columns=DEFAULT_COLUMNS)
+    bestSnr = 0.0
+    nTrulyEmpty = 0
+
+    for idx in indices:
+        stamp = guiderData[guiderName, idx].astype(np.float32)
+        arr = stamp - np.nanmin(stamp)
+
+        # Quick peak-SNR check before running full detection
+        med = np.nanmedian(arr)
+        std = np.nanstd(arr)
+        if std > 0:
+            peakSnr = (np.nanmax(arr) - med) / std
+        else:
+            peakSnr = 0.0
+
+        if peakSnr < config.peakSnrThreshold:
+            nTrulyEmpty += 1
+            continue
+
+        sources = runSourceDetection(
+            arr,
+            threshold=config.minSnr,
+            apertureRadius=apertureRadius,
+            cutOutSize=config.cutOutSize,
+            gain=config.gain,
+        )
+        if not sources.empty and sources["snr"].max() > bestSnr:
+            bestSnr = sources["snr"].max()
+            bestSources = sources
+
+    if not bestSources.empty:
+        log.info(
+            f"Single-stamp fallback recovered source on {guiderName} "
+            f"(SNR={bestSnr:.1f}, {nTrulyEmpty}/{nSample} stamps empty)"
+        )
+
+    return bestSources
+
+
 def buildReferenceCatalog(
     guiderData: GuiderData,
     log: logging.Logger,
@@ -638,6 +708,10 @@ def buildReferenceCatalog(
             cutOutSize=cutOutSize,
             gain=gain,
         )
+        if sources.empty:
+            # Fallback: try detection on individual stamps. The coadd can
+            # wash out stars that drift between frames or have artifacts.
+            sources = _detectOnSingleStamps(guiderData, guiderName, config, apertureRadius, log)
         if sources.empty:
             log.warning(f"No sources detected in `buildReferenceCatalog`for {guiderName} in {expId}. ")
             continue
