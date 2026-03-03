@@ -39,6 +39,7 @@ from astropy.stats import sigma_clipped_stats
 
 import lsst.afw.detection as afwDetect
 from lsst.afw.image import ExposureF, ImageF, MaskedImageF
+from lsst.afw.math import STDEVCLIP, makeStatistics
 
 from .reading import GuiderData
 
@@ -305,20 +306,22 @@ def runSourceDetection(
     # Step 1: Convert numpy image to MaskedImage and Exposure
     exposure = ExposureF(MaskedImageF(ImageF(image)))
 
-    # Step 2: Detect sources
-    # We use Threshold.VALUE with a sigma68 background estimate instead of
-    # Threshold.STDEV because STDEVCLIP can return 0 for some guider
-    # images, causing FootprintSet to fail with "St. dev. must be > 0".
-    # sigma68 = (p84 - p16) / 2 is robust to bright stars (they only
-    # affect the upper tail) and doesn't fail on flat-background images
-    # the way MAD does (MAD=0 when >50% of pixels are identical).
+    # Step 2: Detect sources using STDEVCLIP for the background noise.
+    # The input coadd images are dithered (see GuiderData.getStampArrayCoadd)
+    # to prevent integer quantization from collapsing the pixel distribution
+    # and causing STDEVCLIP to return 0. (See DM-54263.)
     footprints = None
     if not isBlankImage(image):
-        p16, median, p84 = np.nanpercentile(image, [16, 50, 84])
-        imageStd = (p84 - p16) / 2.0
-        if imageStd <= 0:
-            return pd.DataFrame(columns=DEFAULT_COLUMNS)
+        median = np.nanmedian(image)
         exposure.image -= median
+        imageStd = float(makeStatistics(exposure.getMaskedImage(), STDEVCLIP).getValue(STDEVCLIP))
+        if imageStd <= 0:
+            # Fallback: sigma68 is robust to quantization and bright stars.
+            p16, p84 = np.nanpercentile(image, [16, 84])
+            imageStd = (p84 - p16) / 2.0
+        if imageStd <= 0:
+            exposure.image += median
+            return pd.DataFrame(columns=DEFAULT_COLUMNS)
         absThreshold = threshold * imageStd
         thresh = afwDetect.Threshold(absThreshold, afwDetect.Threshold.VALUE)
         footprints = afwDetect.FootprintSet(exposure.getMaskedImage(), thresh, "DETECTED", nPixMin)
@@ -627,7 +630,6 @@ def buildReferenceCatalog(
         apertureRadius = int(config.aperSizeArcsec / pixelScale)
 
         array = guiderData.getStampArrayCoadd(guiderName)
-        # array = np.where(array < 0, 0, array)  # Ensure no negative values
         array = array - np.nanmin(array)  # Ensure no negative values
         sources = runSourceDetection(
             array,
