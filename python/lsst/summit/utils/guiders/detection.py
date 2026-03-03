@@ -773,19 +773,22 @@ def getCutouts(imageArray: np.ndarray, refCenter: tuple[float, float], cutoutSiz
     return Cutout2D(imageArray, (refX, refY), size=cutoutSize, mode="partial", fill_value=np.nan)
 
 
-def isBlankImage(image: np.ndarray, peakSnrMin: float = 5.0) -> bool:
+def isBlankImage(image: np.ndarray, fluxMin: float = 300, peakSnrMin: float = 5.0) -> bool:
     """
     Returns True if the image has no significant source (e.g., no star).
 
-    Uses peak pixel SNR: (max - median) / std. This is more robust than
-    an absolute flux threshold because it adapts to the noise level.
+    An image is considered non-blank if the peak flux above the median
+    exceeds ``fluxMin`` OR the peak pixel SNR (using MAD-based robust
+    std) exceeds ``peakSnrMin``.
 
     Parameters
     ----------
     image : `np.ndarray`
         2D image data.
+    fluxMin : `float`
+        Minimum peak flux above median (ADU) to consider non-blank.
     peakSnrMin : `float`
-        Minimum peak pixel SNR to consider the image non-blank.
+        Minimum peak pixel SNR to consider non-blank.
 
     Returns
     -------
@@ -793,9 +796,16 @@ def isBlankImage(image: np.ndarray, peakSnrMin: float = 5.0) -> bool:
         True if the image is blank, False otherwise.
     """
     med = np.nanmedian(image)
+    peakFlux = np.nanmax(image) - med
+
+    # Absolute flux check
+    if peakFlux > fluxMin:
+        return False
+
+    # SNR check with MAD-based robust std
     mad = np.nanmedian(np.abs(image - med))
-    std = 1.4826 * mad  # MAD-based robust std estimate
+    std = 1.4826 * mad
     if std <= 0:
         return True
-    peakSnr = (np.nanmax(image) - med) / std
+    peakSnr = peakFlux / std
     return peakSnr < peakSnrMin
