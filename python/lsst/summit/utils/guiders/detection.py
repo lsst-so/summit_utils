@@ -43,6 +43,8 @@ from lsst.afw.math import STDEVCLIP, makeStatistics
 
 from .reading import GuiderData
 
+log = logging.getLogger(__name__)
+
 _DEFAULT_COLUMNS: str = (
     "trackid detector expid elapsed_time dalt daz dtheta dx dy "
     "fwhm xroi yroi xccd yccd xroi_ref yroi_ref xccd_ref yccd_ref "
@@ -337,6 +339,7 @@ def runSourceDetection(
     if not footprints:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
 
+    nFootprints = len(footprints.getFootprints())
     results = []
     for fp in footprints.getFootprints():
         # Create a cutout of the image around the footprint
@@ -345,6 +348,11 @@ def runSourceDetection(
         if not star.empty:
             results.append(star)
     if not results:
+        if nFootprints > 0:
+            log.warning(
+                f"FootprintSet found {nFootprints} sources but GalSim "
+                f"failed on all of them (cutOutSize={cutOutSize})."
+            )
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
     df = pd.concat([sf for sf in results], ignore_index=True)
     return df
@@ -380,10 +388,16 @@ def measureStarOnStamp(
         StarMeasurement object with populated fields (may be empty on failure).
     """
     cutout = getCutouts(stamp, refCenter, cutoutSize=cutOutSize)
-    data = cutout.data
+    data = cutout.data.copy()
 
-    if np.all(data == 0) | (not np.isfinite(data).all()):
+    if np.all(data == 0):
         return StarMeasurement()
+
+    # Replace NaN (from border-clipped cutouts) with the median so
+    # GalSim can still measure stars near the stamp edge.
+    nan_mask = ~np.isfinite(data)
+    if nan_mask.any():
+        data[nan_mask] = np.nanmedian(data)
 
     # 1) Subtract the background
     annulus = (apertureRadius * 1.0, apertureRadius * 2)
@@ -446,7 +460,7 @@ def runGalSim(
         ellipticity = np.sqrt(e1**2 + e2**2)
         nEff = 2 * np.pi * sigma**2 * np.sqrt(1 - ellipticity**2)
         shotNoise = np.sqrt(nEff * bkgStd**2)
-        fluxErr = np.sqrt(flux / gain + shotNoise**2)
+        fluxErr = np.sqrt(max(0, flux / gain) + shotNoise**2)
         snr = flux / (shotNoise + 1e-9) if shotNoise > 0 else 0.0
 
         # Calculate second moments
@@ -708,13 +722,17 @@ def buildReferenceCatalog(
             cutOutSize=cutOutSize,
             gain=gain,
         )
+        detectionMethod = "coadd"
         if sources.empty:
             # Fallback: try detection on individual stamps. The coadd can
             # wash out stars that drift between frames or have artifacts.
             sources = _detectOnSingleStamps(guiderData, guiderName, config, apertureRadius, log)
+            detectionMethod = "single_stamp"
         if sources.empty:
             log.warning(f"No sources detected in `buildReferenceCatalog`for {guiderName} in {expId}. ")
             continue
+
+        sources["detection_method"] = detectionMethod
 
         sources.sort_values(by=["snr"], ascending=False, inplace=True)
         sources.reset_index(drop=True, inplace=True)
@@ -755,23 +773,28 @@ def getCutouts(imageArray: np.ndarray, refCenter: tuple[float, float], cutoutSiz
     return Cutout2D(imageArray, (refX, refY), size=cutoutSize, mode="partial", fill_value=np.nan)
 
 
-def isBlankImage(image: np.ndarray, fluxMin: int = 300) -> bool:
+def isBlankImage(image: np.ndarray, peakSnrMin: float = 5.0) -> bool:
     """
     Returns True if the image has no significant source (e.g., no star).
 
+    Uses peak pixel SNR: (max - median) / std. This is more robust than
+    an absolute flux threshold because it adapts to the noise level.
+
     Parameters
     ----------
-    image : 2D array
-        Image data (float or int).
-    fluxMin : float
-        Minimum deviation from the background median to be considered a source.
+    image : `np.ndarray`
+        2D image data.
+    peakSnrMin : `float`
+        Minimum peak pixel SNR to consider the image non-blank.
 
     Returns
     -------
     bool
         True if the image is blank, False otherwise.
-        (no pixel deviates more than flux_min)
     """
     med = np.nanmedian(image)
-    diff = np.abs(image - med)
-    return not np.any(diff > fluxMin)
+    std = np.nanstd(image)
+    if std <= 0:
+        return True
+    peakSnr = (np.nanmax(image) - med) / std
+    return peakSnr < peakSnrMin
