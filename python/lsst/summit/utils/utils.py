@@ -488,8 +488,9 @@ def _getAltAzZenithsFromSeqNum(
     for seqNum in seqNumList:
         md = butler.get("raw.metadata", day_obs=dayObs, seq_num=seqNum, detector=0)
         obsInfo = ObservationInfo(md)
-        alt = obsInfo.altaz_begin.alt.value  # type: ignore[union-attr]
-        az = obsInfo.altaz_begin.az.value  # type: ignore[union-attr]
+        assert obsInfo.altaz_begin is not None, f"altaz_begin is None for seqNum={seqNum}"
+        alt = obsInfo.altaz_begin.alt.value
+        az = obsInfo.altaz_begin.az.value
         elevations.append(alt)
         zeniths.append(90 - alt)
         azimuths.append(az)
