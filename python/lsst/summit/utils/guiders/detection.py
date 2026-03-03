@@ -793,7 +793,8 @@ def isBlankImage(image: np.ndarray, peakSnrMin: float = 5.0) -> bool:
         True if the image is blank, False otherwise.
     """
     med = np.nanmedian(image)
-    std = np.nanstd(image)
+    mad = np.nanmedian(np.abs(image - med))
+    std = 1.4826 * mad  # MAD-based robust std estimate
     if std <= 0:
         return True
     peakSnr = (np.nanmax(image) - med) / std
