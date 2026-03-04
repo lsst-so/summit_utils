@@ -701,6 +701,7 @@ class GuiderReader:
         seqNum: int,
         doSubtractMedian: bool = True,
         columnMaskK: float = 50.0,
+        biasPercentile: float = 10.0,
         scienceDetNum: int = 94,
     ) -> GuiderData:
         """
@@ -713,9 +714,12 @@ class GuiderReader:
         seqNum : `int`
             Sequence number.
         doSubtractMedian : `bool`, optional
-            If True, subtract median row bias from each stamp.
+            If True, subtract column bias from each stamp.
         columnMaskK : `float`, optional
             Threshold factor for column mask detection.
+        biasPercentile : `float`, optional
+            Percentile (0-100) for column bias estimation.
+            Lower values avoid star/trail contamination.
         scienceDetNum : `int`, optional
             Science detector number for WCS reference.
 
@@ -748,6 +752,7 @@ class GuiderReader:
             rawStampsDict,
             doSubtractMedian,
             columnMaskK,
+            biasPercentile,
         )
         guiderData = GuiderData(
             seqNum=seqNum,
@@ -797,9 +802,10 @@ class GuiderReader:
         rawStampsDict: dict[str, Stamps],
         doSubtractMedian: bool,
         columnMaskK: float,
+        biasPercentile: float = 10.0,
     ) -> dict[str, Stamps]:
         """
-        Apply median row bias subtraction and per-stamp column masking.
+        Apply column bias subtraction and per-stamp column masking.
 
 
         Parameters
@@ -807,9 +813,11 @@ class GuiderReader:
         rawStampsDict : `dict[str, Stamps]`
             ROI view of stamps from butler `guider_raw`.
         doSubtractMedian : `bool`, optional
-            If True, subtract median row bias.
+            If True, subtract column bias.
         columnMaskK : `float`, optional
             Threshold factor for column mask detection.
+        biasPercentile : `float`, optional
+            Percentile for column bias estimation.
 
         Returns
         -------
@@ -829,23 +837,28 @@ class GuiderReader:
                 # Work on a copy - never modify original
                 data = stamps[i].stamp_im.image.array.copy()
 
-                # Compute median row bias
-                medianRows = np.nanmedian(data, axis=0)
+                # Compute column bias using low percentile to avoid
+                # star contamination (median pulls dark dips at star cols).
+                percRows = np.nanpercentile(data, biasPercentile, axis=0)
+                rPerc = np.nanpercentile(data, biasPercentile)
                 medianValue = np.nanmedian(data)
-                # Replace NaN medians (fully masked columns) with global median
-                medianRows = np.where(np.isnan(medianRows), medianValue, medianRows)
+                # Replace NaN values (fully masked columns) with global median
+                percRows = np.where(np.isnan(percRows), medianValue, percRows)
 
                 # Compute column mask on bias-subtracted data
-                colMask = getColumnMask(data - medianRows[np.newaxis, :], k=columnMaskK)
+                colMask = getColumnMask(
+                    data - percRows[np.newaxis, :] - (rPerc - medianValue),
+                    k=columnMaskK,
+                )
 
                 # Create mask array for MaskedImageF (BAD=1 for masked cols)
                 nRows, nCols = data.shape
                 maskArray = np.zeros((nRows, nCols), dtype=np.uint32)
                 maskArray[colMask] = 1  # Set BAD bit for masked columns
 
-                # Apply median row bias subtraction
+                # Apply column bias subtraction
                 if doSubtractMedian:
-                    data = data - medianRows[np.newaxis, :]
+                    data = data - percRows[np.newaxis, :] - (rPerc - medianValue)
 
                 # Fill masked columns with global median
                 if colMask.any():
