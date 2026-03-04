@@ -51,7 +51,7 @@ _DEFAULT_COLUMNS: str = (
     "dxfp dyfp xfp yfp alt az xfp_ref yfp_ref alt_ref az_ref "
     "xerr yerr theta theta_err theta_ref flux flux_err magoffset snr "
     "ixx iyy ixy e1 e2 e1_altaz e2_altaz "
-    "ampname timestamp stamp detid filter exptime galsim_failed "
+    "ampname timestamp stamp detid filter exptime "
 )
 DEFAULT_COLUMNS: tuple[str, ...] = tuple(_DEFAULT_COLUMNS.split())
 
@@ -220,7 +220,6 @@ class StarMeasurement:
     flux: float = field(default=np.nan)
     flux_err: float = field(default=0.0)
     snr: float = field(default=0.0)
-    galsim_failed: bool = field(default=False)
 
     def toDataFrame(self) -> pd.DataFrame:
         """
@@ -406,17 +405,6 @@ def measureStarOnStamp(
 
     # 2)  Track the star across all stamps for this guider
     star = runGalSim(dataBkgSub, gain=gain, bkgStd=bkgStd)
-
-    # If GalSim fails, fall back to flux-weighted centroid + aperture photometry.
-    # This gives valid x, y, flux for tracking even without shape info.
-    if not np.isfinite(star.xroi):
-        weights = np.clip(dataBkgSub, 0, None)
-        total = np.nansum(weights)
-        if total > 0:
-            yy, xx = np.indices(dataBkgSub.shape, dtype=float)
-            star.xroi = float(np.nansum(xx * weights) / total)
-            star.yroi = float(np.nansum(yy * weights) / total)
-            star.galsim_failed = True
 
     # 3) Make aperture photometry measurements
     # Galsim flux is the normalization of the Gaussian, not w/ fixed aper.
