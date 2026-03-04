@@ -95,6 +95,7 @@ class GuiderStarTracker:
             DataFrame with tracked stars and their properties,
             including positions, fluxes, and residual offsets.
         """
+        _refCatalog = None
         if refCatalog is None:
             self.log.info("Using self-generated refcat")
             _refCatalog = buildReferenceCatalog(self.guiderData, self.log, self.config)
@@ -108,7 +109,23 @@ class GuiderStarTracker:
         for guiderName in self.guiderData.guiderNames:
             refDet = refCatalog.query(f"detector == '{guiderName}'")
             if refDet.empty:
-                self.log.warning(f"No stars found in reference catalog for {guiderName} in {self.expid}.")
+                # Diagnose: check what was in the unfiltered refcat
+                preCut = _refCatalog.query(f"detector == '{guiderName}'") if _refCatalog is not None else None
+                if preCut is not None and not preCut.empty:
+                    best = preCut.sort_values("snr", ascending=False).iloc[0]
+                    reason = _diagnoseQualityCutRejections(
+                        preCut.sort_values("snr", ascending=False).iloc[:1], self.shape, self.config
+                    )[0]
+                    self.log.warning(
+                        f"No stars in refcat for {guiderName} in {self.expid}. "
+                        f"Best candidate: flux={best['flux']:.0f} snr={best['snr']:.1f} "
+                        f"e={np.hypot(best['e1'], best['e2']):.2f} fwhm={best['fwhm']:.1f} "
+                        f"pos=({best['xroi']:.0f},{best['yroi']:.0f}). Rejected: {reason}"
+                    )
+                else:
+                    self.log.warning(
+                        f"No stars detected for {guiderName} in {self.expid} " f"(empty before quality cuts)."
+                    )
                 continue
 
             table = self._trackStarForOneGuider(refDet, guiderName)
@@ -334,6 +351,60 @@ def applyQualityCuts(
     # Combine all masks
     mask = mask1 & mask3 & mask4
     return stars[mask].copy()
+
+
+def _diagnoseQualityCutRejections(
+    stars: pd.DataFrame, shape: tuple[float, float], config: GuiderStarTrackerConfig
+) -> list[str]:
+    """Return per-row rejection reasons using the same masks as
+    applyQualityCuts.
+
+    Parameters
+    ----------
+    stars : `pd.DataFrame`
+        Pre-cut DataFrame (rows that were all rejected).
+    shape : `tuple[float, float]`
+        ROI shape (rows, cols).
+    config : `GuiderStarTrackerConfig`
+        Configuration with quality cut thresholds.
+
+    Returns
+    -------
+    reasons : `list[str]`
+        One string per row describing which cuts failed.
+    """
+    minSnr = config.minSnr
+    maxEllipticity = config.maxEllipticity
+    edgeMargin = config.edgeMargin
+    roiCols, roiRows = shape
+
+    # Same masks as applyQualityCuts
+    snrOk = (stars["snr"] >= minSnr) & (stars["flux"] > 0) & (stars["flux_err"] > 0)
+
+    eabs = np.hypot(stars["e1"], stars["e2"])
+    ellipOk = (stars["e1"].abs() <= maxEllipticity) & (stars["e1"].abs() <= maxEllipticity)
+    ellipOk &= eabs <= maxEllipticity
+
+    edgeOk = (
+        (stars["xroi"] >= edgeMargin)
+        & (stars["xroi"] <= roiRows - edgeMargin)
+        & (stars["yroi"] >= edgeMargin)
+        & (stars["yroi"] <= roiCols - edgeMargin)
+    )
+
+    reasons = []
+    for i, (_, row) in enumerate(stars.iterrows()):
+        r = []
+        if not snrOk.iloc[i]:
+            snr = row["snr"]
+            r.append(f"snr={snr:.1f}" if np.isfinite(snr) else "snr=NaN")
+        if not ellipOk.iloc[i]:
+            e = np.hypot(row["e1"], row["e2"])
+            r.append(f"e={e:.2f}" if np.isfinite(e) else "e=NaN")
+        if not edgeOk.iloc[i]:
+            r.append(f"edge(x={row['xroi']:.0f},y={row['yroi']:.0f})")
+        reasons.append("|".join(r) if r else "?")
+    return reasons
 
 
 def setUniqueId(guiderData: GuiderData, stars: pd.DataFrame) -> pd.DataFrame:
