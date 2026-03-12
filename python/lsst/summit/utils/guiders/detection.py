@@ -37,8 +37,9 @@ import pandas as pd
 from astropy.nddata import Cutout2D
 from astropy.stats import sigma_clipped_stats
 
+import lsst.afw.detection as afwDetect
 from lsst.afw.image import ExposureF, ImageF, MaskedImageF
-from lsst.summit.utils.utils import detectObjectsInExp
+from lsst.afw.math import STDEVCLIP, makeStatistics
 
 from .reading import GuiderData
 
@@ -277,6 +278,7 @@ def runSourceDetection(
     cutOutSize: int = 25,
     apertureRadius: int = 5,
     gain: float = 1.0,
+    nPixMin: int = 10,
 ) -> pd.DataFrame:
     """
     Detect sources in an image and measure their properties.
@@ -293,6 +295,8 @@ def runSourceDetection(
         Aperture radius in pixels for photometry.
     gain : `float`
         Detector gain (e-/ADU).
+    nPixMin : `int`
+        Minimum number of pixels in a footprint for detection.
 
     Returns
     -------
@@ -302,13 +306,26 @@ def runSourceDetection(
     # Step 1: Convert numpy image to MaskedImage and Exposure
     exposure = ExposureF(MaskedImageF(ImageF(image)))
 
-    # Step 2: Detect sources
-    # we assume that we have bright stars
-    # filter out stamps with no stars
+    # Step 2: Detect sources using STDEVCLIP for the background noise.
+    # The input coadd images are dithered (see GuiderData.getStampArrayCoadd)
+    # to prevent integer quantization from collapsing the pixel distribution
+    # and causing STDEVCLIP to return 0. (See DM-54263.)
+    footprints = None
     if not isBlankImage(image):
-        footprints = detectObjectsInExp(exposure, nSigma=threshold)
-    else:
-        footprints = None
+        median = np.nanmedian(image)
+        exposure.image -= median
+        imageStd = float(makeStatistics(exposure.getMaskedImage(), STDEVCLIP).getValue(STDEVCLIP))
+        if imageStd <= 0:
+            # Fallback: sigma68 is robust to quantization and bright stars.
+            p16, p84 = np.nanpercentile(image, [16, 84])
+            imageStd = (p84 - p16) / 2.0
+        if imageStd <= 0:
+            exposure.image += median
+            return pd.DataFrame(columns=DEFAULT_COLUMNS)
+        absThreshold = threshold * imageStd
+        thresh = afwDetect.Threshold(absThreshold, afwDetect.Threshold.VALUE)
+        footprints = afwDetect.FootprintSet(exposure.getMaskedImage(), thresh, "DETECTED", nPixMin)
+        exposure.image += median
 
     if not footprints:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
@@ -613,7 +630,6 @@ def buildReferenceCatalog(
         apertureRadius = int(config.aperSizeArcsec / pixelScale)
 
         array = guiderData.getStampArrayCoadd(guiderName)
-        # array = np.where(array < 0, 0, array)  # Ensure no negative values
         array = array - np.nanmin(array)  # Ensure no negative values
         sources = runSourceDetection(
             array,

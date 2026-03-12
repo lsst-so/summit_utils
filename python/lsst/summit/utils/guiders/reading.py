@@ -406,10 +406,15 @@ class GuiderData(BaseModel):
         if len(stamps) == 0:
             raise ValueError(f"No stamps found for detector {detName!r}")
 
-        # Collect arrays, with optional bias subtraction
+        # Collect arrays, with optional bias subtraction.
         arrList = [self[detName, idx] for idx in range(len(stamps))]
-        stack = np.nanmedian(arrList, axis=0)
-        return stack
+        # Add a uniform [0, 1) dither per stamp before the median to break
+        # integer quantization. Without this, the coadd pixel distribution
+        # can be so narrow that STDEVCLIP returns 0. (See DM-54263.)
+        stack = np.array(arrList, dtype=np.float32)
+        rng = np.random.default_rng(seed=0)
+        stack += rng.uniform(0, 1, size=stack.shape).astype(np.float32)
+        return np.nanmedian(stack, axis=0)
 
     def getGuiderAmpName(self, detName: str) -> str:
         """
