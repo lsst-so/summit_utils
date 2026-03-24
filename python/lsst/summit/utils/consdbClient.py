@@ -28,7 +28,7 @@ from urllib.parse import quote, urlparse
 
 import numpy as np
 import requests
-from astropy.table import Column, Table, join
+from astropy.table import Column, Table
 
 __all__ = ["ConsDbClient", "FlexibleMetadataInfo", "getCcdVisitTableForDay", "getWideQuicklookTableForDay"]
 
@@ -803,29 +803,17 @@ def getWideQuicklookTableForDay(client: ConsDbClient, dayObs: int) -> Table:
     table : `astropy.table.Table`
         The resulting wide quicklook table.
     """
-    vq = client.query(f"SELECT * FROM cdb_LSSTCam.visit1_quicklook WHERE day_obs = {dayObs}")
-    v = client.query(f"SELECT * FROM cdb_LSSTCam.visit1 WHERE day_obs = {dayObs}")
+    vqCols = set(client.query("SELECT * FROM cdb_LSSTCam.visit1_quicklook LIMIT 0").colnames)
+    vCols = set(client.query("SELECT * FROM cdb_LSSTCam.visit1 LIMIT 0").colnames)
 
-    wide: Table = join(
-        vq,
-        v,
-        keys="visit_id",
-        join_type="inner",
-        table_names=("vq", "v"),
-        uniq_col_name="{col_name}_{table_name}",  # only duplicates get suffixed
-    )
+    vOnlyCols = vCols - vqCols  # exclude visit_id and all duplicates
 
-    duplicated = sorted((set(vq.colnames) & set(v.colnames)) - {"visit_id"})
-    for name in duplicated:
-        left = f"{name}_vq"
-        right = f"{name}_v"
-        if left not in wide.colnames or right not in wide.colnames:
-            continue
+    selectClauses = ["vq.*"] + [f"v.{col}" for col in sorted(vOnlyCols)]
 
-        if not columnsEqual(wide[left], wide[right]):
-            raise ValueError(f"Column '{name}' differs between tables for dayObs={dayObs}")
-
-        wide[name] = wide[left]
-        wide.remove_columns([left, right])
-
-    return wide
+    query = f"""
+        SELECT {', '.join(selectClauses)}
+        FROM cdb_LSSTCam.visit1_quicklook vq
+        INNER JOIN cdb_LSSTCam.visit1 v USING (visit_id)
+        WHERE vq.day_obs = {dayObs}
+    """
+    return client.query(query)
