@@ -26,10 +26,11 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import numpy as np
 import requests
-from astropy.table import Table
+from astropy.table import Column, Table
 
-__all__ = ["ConsDbClient", "FlexibleMetadataInfo"]
+__all__ = ["ConsDbClient", "FlexibleMetadataInfo", "getCcdVisitTableForDay", "getWideQuicklookTableForDay"]
 
 
 logger = logging.getLogger(__name__)
@@ -694,3 +695,125 @@ class ConsDbClient:
             return {key: (str(value[0]), str(value[1])) for key, value in result.items()}
         else:
             return [str(value) for value in result]
+
+
+def getCcdVisitTableForDay(
+    client: ConsDbClient,
+    dayObs: int,
+    visitTableItems: list[str] | None = None,
+    detectors: list[int] | None = None,
+    withZeropoint: bool = False,
+) -> Table:
+    """Get the ccdvisit1_quicklook table for a given dayObs.
+
+    Parameters
+    ----------
+    client : `ConsDbClient`
+        The ConsDbClient to use.
+    dayObs : `int`
+        The dayObs to query for.
+    visitTableItems : `list` of `str`, optional
+        Additional items from the visit1 table to include.
+    detectors : `list` of `int`, optional
+        If given, only return rows for these detectors.
+    withZeropoint : `bool`, optional
+        If ``True``, only return rows with a non-null zeropoint.
+
+    Returns
+    -------
+    table : `astropy.table.Table`
+        The resulting table.
+    """
+    extraVisit: str = ", " + ", ".join(f"v.{item}" for item in visitTableItems) if visitTableItems else ""
+    query = (
+        "SELECT cvq.*, "
+        "cv.detector, cv.visit_id, "
+        f"v.band, v.exp_time, v.seq_num, v.day_obs, v.img_type{extraVisit} "
+        "FROM cdb_LSSTCam.ccdvisit1_quicklook as cvq, "
+        "cdb_LSSTCam.ccdvisit1 as cv, "
+        "cdb_LSSTCam.visit1 as v "
+    )
+    where = f"WHERE cvq.ccdvisit_id=cv.ccdvisit_id and cv.visit_id=v.visit_id and v.day_obs={dayObs}"
+    if detectors:
+        where += f" and detector in ({','.join([str(d) for d in detectors])})"
+    if withZeropoint:
+        where += " and cvq.zero_point is not null"
+
+    table = client.query(query + where)
+    return table
+
+
+def columnsEqual(a: Column, b: Column) -> bool:
+    """Check if two columns are equal, taking masks into account.
+
+    Parameters
+    ----------
+    a : `Column`
+        First column to compare.
+    b : `Column`
+        Second column to compare.
+
+    Returns
+    -------
+    equal : `bool`
+        True if the columns are equal, False otherwise.
+    """
+    aArr = np.asanyarray(a)
+    bArr = np.asanyarray(b)
+    if aArr.shape != bArr.shape:
+        return False
+
+    aMask = getattr(a, "mask", None)
+    bMask = getattr(b, "mask", None)
+
+    if aMask is None and bMask is None:
+        return bool(np.all(aArr == bArr))
+
+    if aMask is None:
+        aMask = np.zeros(aArr.shape, dtype=bool)
+    if bMask is None:
+        bMask = np.zeros(bArr.shape, dtype=bool)
+
+    aMaskArr = np.asanyarray(aMask)
+    bMaskArr = np.asanyarray(bMask)
+
+    if np.any(aMaskArr ^ bMaskArr):
+        return False  # one masked where the other isn't
+
+    present = ~aMaskArr
+    return bool(np.all(aArr[present] == bArr[present]))
+
+
+def getWideQuicklookTableForDay(client: ConsDbClient, dayObs: int) -> Table:
+    """Get a wide quicklook table for a given dayObs.
+
+    Joins all columns from the visit1 table to the visit1_quicklook table. Note
+    that the visit1 table already contains all the columns from the exposure
+    table, and is just keyed by the exposure_id instead of the visit_id.
+
+    Parameters
+    ----------
+    client : `ConsDbClient`
+        The ConsDbClient to use.
+    dayObs : `int`
+        The dayObs to query for.
+
+    Returns
+    -------
+    table : `astropy.table.Table`
+        The resulting wide quicklook table.
+    """
+    vqCols = set(client.query("SELECT * FROM cdb_LSSTCam.visit1_quicklook LIMIT 0").colnames)
+    vCols = set(client.query("SELECT * FROM cdb_LSSTCam.visit1 LIMIT 0").colnames)
+
+    vOnlyCols = vCols - vqCols  # exclude visit_id and all duplicates
+
+    selectClauses = ["vq.*"] + [f"v.{col}" for col in sorted(vOnlyCols)]
+
+    query = f"""
+        SELECT {', '.join(selectClauses)}
+        FROM cdb_LSSTCam.visit1_quicklook vq
+        INNER JOIN cdb_LSSTCam.visit1 v USING (visit_id)
+        WHERE vq.day_obs = {dayObs}
+    """
+    return client.query(query)
