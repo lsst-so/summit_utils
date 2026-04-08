@@ -297,7 +297,7 @@ def computeTrendMetrics(
     global_std = float(mad_std(y))
 
     fitter = RobustFitter()
-    fit_res = fitter.fit(x, y)
+    fit_res = fitter.fit(x, y, residualThreshold=3.0)
 
     return GuiderDriftResult(
         fit=fit_res,
