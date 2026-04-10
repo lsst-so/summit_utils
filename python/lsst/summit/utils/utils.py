@@ -639,9 +639,15 @@ def getSite() -> str:
     location : `str`
         One of:
         ['tucson', 'summit', 'base', 'staff-rsp', 'rubin-devl', 'jenkins',
-         'usdf-k8s']
-        If the location cannot be determined "UNKOWN" is returned.
+         'usdf-k8s', 'local']
 
+        ``local`` is returned when none of the known sites can be detected,
+        which usually means the code is running on a developer's laptop or
+        in some other environment without the standard env vars set. Callers
+        that need a real site (e.g. to talk to S3, EFD or a Butler repo)
+        should treat ``local`` as "no functioning site available" and either
+        raise or skip; callers that only branch on ``site == "summit"`` style
+        checks can treat ``local`` as a no-op fallthrough.
     """
     # All nublado instances guarantee that EXTERNAL_URL is set and uniquely
     # identifies it.
@@ -683,8 +689,8 @@ def getSite() -> str:
     if location == "USDF":
         return "usdf-k8s"
 
-    # we have failed
-    return "UNKOWN"
+    # No known site detected — assume this is a developer machine.
+    return "local"
 
 
 def getAltAzFromSkyPosition(

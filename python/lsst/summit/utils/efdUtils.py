@@ -463,8 +463,11 @@ def makeEfdClient(testing: bool | None = False, databaseName: str | None = None)
         return EfdClient("usdf_efd", **efdKwargs)
 
     site = getSite()
-    if site == "UNKNOWN":
-        raise RuntimeError("Could not create EFD client as the site could not be determined")
+    if site == "local":
+        raise RuntimeError(
+            "Could not create EFD client: getSite() returned 'local', meaning none of the known"
+            " sites could be detected. EFD clients are only available from real Rubin sites."
+        )
 
     if site == "summit":
         return EfdClient("summit_efd", **efdKwargs)
