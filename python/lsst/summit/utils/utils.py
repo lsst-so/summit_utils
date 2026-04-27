@@ -687,6 +687,13 @@ def getSite() -> str:
     if jenkinsHome != "":
         return "jenkins"
 
+    # GitHub Actions sets GITHUB_ACTIONS=true in every workflow run.
+    # Detect it independently of any downstream-package env vars so that
+    # summit_utils' own GHA jobs (and any dep that runs us under GHA)
+    # both get the right answer.
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        return "gha"
+
     # we're probably inside a k8s pod doing rapid analysis work at this point
     location = os.getenv("RAPID_ANALYSIS_LOCATION", "")
     if location == "TTS":
@@ -697,12 +704,6 @@ def getSite() -> str:
         return "summit"
     if location == "USDF":
         return "usdf-k8s"
-    # ``gha`` is set by the rubintv_production GitHub Actions workflow.
-    # Compared case-insensitively because the existing TTS/BTS/SUMMIT/USDF
-    # values above are all upper-case shouts and "gha" reads more
-    # naturally lower-case in the workflow file -- accept either.
-    if location.lower() == "gha":
-        return "gha"
 
     # No known site detected — assume this is a developer machine.
     return "local"
