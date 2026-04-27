@@ -641,9 +641,11 @@ def getSite() -> str:
         ['tucson', 'summit', 'base', 'staff-rsp', 'rubin-devl', 'jenkins',
          'usdf-k8s', 'gha', 'local']
 
-        ``gha`` is returned when running under GitHub Actions (signalled by
-        ``RAPID_ANALYSIS_LOCATION=gha``, which the rubintv_production CI
-        workflow sets). Like ``local``, it means "no functioning site
+        ``gha`` is returned when running under GitHub Actions, detected
+        via the ``GITHUB_ACTIONS=true`` env var that GitHub sets in every
+        workflow run. This works whether summit_utils is being tested on
+        its own or as a dep of a downstream repo; nothing RA-specific is
+        consulted here. Like ``local``, it means "no functioning site
         available"; the dedicated value lets CI-only branching (skipping
         butler/uploader-bound tests) be expressed without dragging
         developer laptops into the same opt-out.
@@ -686,6 +688,13 @@ def getSite() -> str:
     if jenkinsHome != "":
         return "jenkins"
 
+    # GitHub Actions sets GITHUB_ACTIONS=true in every workflow run.
+    # Detect it independently of any downstream-package env vars so that
+    # summit_utils' own GHA jobs (and any dep that runs us under GHA)
+    # both get the right answer.
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        return "gha"
+
     # we're probably inside a k8s pod doing rapid analysis work at this point
     location = os.getenv("RAPID_ANALYSIS_LOCATION", "")
     if location == "TTS":
@@ -696,12 +705,6 @@ def getSite() -> str:
         return "summit"
     if location == "USDF":
         return "usdf-k8s"
-    # ``gha`` is set by the rubintv_production GitHub Actions workflow.
-    # Compared case-insensitively because the existing TTS/BTS/SUMMIT/USDF
-    # values above are all upper-case shouts and "gha" reads more
-    # naturally lower-case in the workflow file -- accept either.
-    if location.lower() == "gha":
-        return "gha"
 
     # No known site detected — assume this is a developer machine.
     return "local"
