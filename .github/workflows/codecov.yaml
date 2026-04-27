@@ -51,3 +51,9 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+          # Explicit slug so Codecov's repo lookup doesn't rely on
+          # auto-detection from the git remote, which has been a source
+          # of "Repository not found" 404s after the lsst-sitcom ->
+          # lsst-so org rename. ``github.repository`` resolves to the
+          # org/repo of the currently running workflow.
+          slug: ${{ github.repository }}
