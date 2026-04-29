@@ -30,12 +30,13 @@ def getVcr():
     """Get a VCR object for use in tests.
 
     Use record_mode="none" to run tests for normal operation. To update files
-    or generate new ones, make sure you have a working connection to the EFD at
-    all the relevant sites, and temporarily run with mode="all" via *both*
-    python/pytest *and* with scons, as these generate slightly different HTTP
-    requests for some reason. Also make sure to do all this at both the summit
-    and USDF. The TTS is explicitly skipped and does not need to follow this
-    procedure.
+    or generate new ones, make sure you have a working connection to the EFD
+    and temporarily run with mode="all" via *both* python/pytest *and* with
+    scons, as these generate slightly different HTTP requests for some reason.
+    Also make sure to do this at the summit (USDF coverage is provided by the
+    same recording, since matching ignores host/port and so is independent of
+    whether requests go through a proxy). The TTS is explicitly skipped and
+    does not need to follow this procedure.
     """
     dirname = os.path.dirname(__file__)
     cassette_library_dir = os.path.join(dirname, "data", "cassettes")
@@ -43,6 +44,6 @@ def getVcr():
         record_mode="none",
         cassette_library_dir=cassette_library_dir,
         path_transformer=vcr.VCR.ensure_suffix(".yaml"),
-        match_on=["method", "scheme", "host", "port", "path", "query", "body"],
+        match_on=["method", "path", "query", "body"],
     )
     return safe_vcr
