@@ -33,6 +33,7 @@ import lsst.ip.isr.isrMock as isrMock
 import lsst.pex.exceptions
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.testUtils
+import lsst.utils.tests
 from lsst.afw.image import TransmissionCurve
 from lsst.summit.utils.quickLook import QuickLookIsrTask, QuickLookIsrTaskConfig
 
