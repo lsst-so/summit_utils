@@ -1,0 +1,77 @@
+name: "mypy coverage"
+
+# Runs https://github.com/mfisherlevine/mypy_coverage on every PR and on
+# pushes to main. Currently informational only (no threshold), so it can
+# never block a merge -- the value is the inline annotations on the PR
+# diff for unannotated / partially annotated definitions, plus the
+# markdown coverage report posted as a sticky PR comment.
+#
+# This is complementary to mypy_check.yaml: that one is a pass/fail mypy
+# run; this one quantifies how much of the codebase is annotated at all.
+#
+# To gate on a coverage floor in the future, add ``threshold: 85`` (or
+# whatever) under ``with:`` and add the job's name to the required
+# status checks for ``main`` in the branch protection settings.
+
+"on":
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: "Annotate coverage gaps"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - id: mc
+        uses: mfisherlevine/mypy_coverage@v0.2.3
+        with:
+          version: "0.2.3"
+          format: github
+          # Use the repo's mypy.ini directly so we pick up the same
+          # exclude pattern, files=, and mypy_path= as the local mypy run.
+          config: mypy.ini
+          # Drop the walled-off "Excluded files" section: it's noise in
+          # the PR comment and reviewers don't act on it.
+          include-excluded: "false"
+      - name: "Build markdown report"
+        if: always()
+        # The action above pip-installs mypy-coverage, so the CLI is on
+        # PATH for the rest of the job. Re-run it here in markdown mode
+        # to produce a body we can post as a sticky PR comment.
+        run: |
+          mypy-coverage \
+            --color never \
+            --format markdown \
+            --no-include-excluded \
+            --config mypy.ini \
+            > "$RUNNER_TEMP/mypy-coverage.md" \
+            || true
+      - name: "Coverage summary"
+        if: always()
+        run: cat "$RUNNER_TEMP/mypy-coverage.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: "Post sticky PR comment (recreated each run)"
+        # ``recreate: true`` deletes the previous comment and posts a
+        # fresh one each run, so the new comment gets a current
+        # timestamp and the PR conversation always renders it at the
+        # bottom (after every commit) instead of stranded at the top
+        # where it first appeared.
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: mypy-coverage-report
+          recreate: true
+          path: ${{ runner.temp }}/mypy-coverage.md

@@ -639,9 +639,24 @@ def getSite() -> str:
     location : `str`
         One of:
         ['tucson', 'summit', 'base', 'staff-rsp', 'rubin-devl', 'jenkins',
-         'usdf-k8s']
-        If the location cannot be determined "UNKOWN" is returned.
+         'usdf-k8s', 'gha', 'local']
 
+        ``gha`` is returned when running under GitHub Actions, detected via the
+        ``GITHUB_ACTIONS=true`` env var that GitHub sets in every workflow run.
+        This works whether summit_utils is being tested on its own or as a dep
+        of a downstream repo. Like ``local``, it means "no functioning site
+        available"; the dedicated value lets CI-only branching (skipping
+        butler/uploader-bound tests) be expressed without dragging developer
+        laptops into the same opt-out.
+
+        ``local`` is returned when none of the known sites can be detected,
+        which usually means the code is running on a developer's laptop or
+        in some other environment without the standard env vars set. Callers
+        that need a real site (e.g. to talk to S3, EFD or a Butler repo)
+        should treat ``local`` (and ``gha``) as "no functioning site
+        available" and either raise or skip; callers that only branch on
+        ``site == "summit"`` style checks can treat them as a no-op
+        fallthrough.
     """
     # All nublado instances guarantee that EXTERNAL_URL is set and uniquely
     # identifies it.
@@ -672,6 +687,13 @@ def getSite() -> str:
     if jenkinsHome != "":
         return "jenkins"
 
+    # GitHub Actions sets GITHUB_ACTIONS=true in every workflow run.
+    # Detect it independently of any downstream-package env vars so that
+    # summit_utils' own GHA jobs (and any dep that runs us under GHA)
+    # both get the right answer.
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        return "gha"
+
     # we're probably inside a k8s pod doing rapid analysis work at this point
     location = os.getenv("RAPID_ANALYSIS_LOCATION", "")
     if location == "TTS":
@@ -683,8 +705,8 @@ def getSite() -> str:
     if location == "USDF":
         return "usdf-k8s"
 
-    # we have failed
-    return "UNKOWN"
+    # No known site detected — assume this is a developer machine.
+    return "local"
 
 
 def getAltAzFromSkyPosition(

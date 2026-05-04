@@ -8,6 +8,8 @@ passThrough = ['DAF_BUTLER_REPOSITORY_INDEX',  # for repo locations
                'EXTERNAL_INSTANCE_URL',  # needed to determine site location - see utils.getSite()
                'HOSTNAME',  # needed to determine site location - see utils.getSite()
                'JENKINS_HOME',  # needed to determine site location - see utils.getSite()
+               'GITHUB_ACTIONS',  # needed to determine site location - see utils.getSite()
+               'RAPID_ANALYSIS_LOCATION',  # needed to determine site location - see utils.getSite()
                'PGPASSFILE',  # needed for butler authentication
                'PGUSER',  # needed for butler authentication
                'AWS_SHARED_CREDENTIALS_FILE',  # needed for embargo butler

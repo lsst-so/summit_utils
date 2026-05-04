@@ -1,0 +1,59 @@
+name: "codecov"
+
+# Runs the test suite under the LSST science pipelines stack and uploads
+# the coverage report to Codecov on every PR and on pushes to main.
+# Pinned to the moving ``w_latest`` stack tag so the job tracks the
+# current weekly without requiring manual bumps.
+
+"on":
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: "Run pytest with coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/lsst/scipipe:al9-w_latest
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Set up package and run pytest with coverage"
+        shell: bash -l {0}
+        run: |
+          source /opt/lsst/software/stack/loadLSST.bash
+          setup lsst_sitcom
+          pip install pytest pytest-cov
+          eups declare -r . -t current summit_utils git
+          setup -t current summit_utils
+          scons --no-tests
+          pytest \
+            --cov=lsst.summit.utils \
+            --cov-report=xml \
+            --cov-report=term \
+            tests/
+
+      - name: "Upload coverage to Codecov"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Explicit slug so Codecov's repo lookup doesn't rely on
+          # auto-detection from the git remote, which has been a source
+          # of "Repository not found" 404s after the lsst-sitcom ->
+          # lsst-so org rename. ``github.repository`` resolves to the
+          # org/repo of the currently running workflow.
+          slug: ${{ github.repository }}
