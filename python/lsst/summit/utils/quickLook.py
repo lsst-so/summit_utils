@@ -23,7 +23,6 @@ import dataclasses
 import importlib.resources
 from typing import Any
 
-
 import lsst.afw.cameraGeom as camGeom
 import lsst.afw.image as afwImage
 import lsst.ip.isr as ipIsr
@@ -103,7 +102,7 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         # itself, which is then instantiated later on, in the run() method,
         # with the dynamically generated config.
         # import pdb; pdb.set_trace()
-        if IsrTaskLSST._DefaultName != 'isrLSST':
+        if IsrTaskLSST._DefaultName != "isrLSST":
             raise RuntimeError("QuickLookIsrTask should now always use IsrTaskLSST for processing.")
         self.isrTask = IsrTaskLSST
 
@@ -234,13 +233,6 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         isrTask = self.isrTask(config=isrConfig)
 
         # DM-47959: TODO Add fringe correction to IsrTaskLSST.
-        # if fringes:
-        #     # Must be run after isrTask is instantiated.
-        #     isrTask.fringe.loadFringes(
-        #         fringes,
-        #         expId=ccdExposure.info.id,
-        #         assembler=isrTask.assembleCcd if isrConfig.doAssembleIsrExposures else None,
-        #     )
 
         result = isrTask.run(
             ccdExposure,

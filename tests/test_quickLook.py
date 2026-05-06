@@ -31,7 +31,6 @@ import lsst.pex.exceptions
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.testUtils
 import lsst.utils.tests
-
 from lsst.summit.utils.quickLook import QuickLookIsrTask, QuickLookIsrTaskConfig
 
 
@@ -189,7 +188,9 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
             self.repo, outputExposure, {"instrument", "exposure", "detector"}, "Exposure"
         )
         butlerTests.addDatasetType(self.repo, exposure, {"instrument", "exposure", "detector"}, "Exposure")
-        butlerTests.addDatasetType(self.repo, outputStatistics, {"instrument", "exposure", "detector"}, "StructuredDataDict")
+        butlerTests.addDatasetType(
+            self.repo, outputStatistics, {"instrument", "exposure", "detector"}, "StructuredDataDict"
+        )
 
         # dataIds
         self.exposure_id = self.repo.registry.expandDataId(
@@ -228,7 +229,7 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
                 gainAdjustments=[1.0 for x in ampNames],
             ),
             gainCorrection,
-            self.detector_id
+            self.detector_id,
         )
 
     def tearDown(self):
@@ -243,9 +244,10 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
         config.qa.doThumbnailFlattened = False
         config.doCalculateStatistics = False
 
-        # Turn on all optional inputs
-        config.doDeferredCharge = False  # There is no CTI calibration
-                                         # available for LATISS.
+        # Turn on all optional inputs, except CTI, as that isn't
+        # defined for LATISS.
+        config.doDeferredCharge = False
+
         config.usePtcReadNoise = True
         config.doCrosstalk = True
         config.doBrighterFatter = True
