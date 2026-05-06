@@ -109,7 +109,29 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
     """
 
     def setUp(self):
-        instrument = "testCam"
+        # These need to be real, not empty:
+        self.mockConfig = isrMock.IsrMockLSSTConfig()
+        self.camera = isrMock.IsrMockLSST(config=self.mockConfig).getCamera()
+
+        self.ccdExposure = isrMock.RawMockLSST(config=self.mockConfig).run()
+        self.bias = isrMock.BiasMockLSST(config=self.mockConfig).run()
+        self.dark = isrMock.DarkMockLSST(config=self.mockConfig).run()
+        self.flat = isrMock.FlatMockLSST(config=self.mockConfig).run()
+        self.defects = isrMock.DefectMockLSST(config=self.mockConfig).run()
+
+        amps = self.ccdExposure.getDetector().getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+        self.ptc = ipIsr.PhotonTransferCurveDataset(ampNames=ampNames)  # Mock PTC dataset
+        for amp, gain in self.mockConfig.gainDict.items():
+            self.ptc.gain[amp] = 1.0
+        self.crosstalk = lsst.ip.isr.crosstalk.CrosstalkCalib(nAmp=len(ampNames))
+        self.crosstalk.hasCrosstalk = True
+        self.cti = isrMock.DeferredChargeMockLSST(config=self.mockConfig).run()
+        self.mockConfig.doDeferredCharge = False  # TODO: DM-54880
+        self.bfKernel = isrMock.BfKernelMockLSST(config=self.mockConfig).run()
+
+        # dataId values:
+        instrument = self.camera.getName()
         exposureId = 100
         visit = 100101
         detector = 0
@@ -190,20 +212,25 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
 
         # put empty data
         self.butler = butlerTests.makeTestCollection(self.repo)
-        self.butler.put(afwImage.ExposureF(), ccdExposure, self.exposure_id)
-        self.butler.put(afwTestUtils.CameraWrapper().camera, camera, self.instrument_id)
-        self.butler.put(afwImage.ExposureF(), bias, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), dark, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), flat, self.flat_id)
-        self.butler.put(lsst.ip.isr.Defects(), defects, self.detector_id)
-        self.butler.put(
-            lsst.ip.isr.brighterFatterKernel.BrighterFatterKernel(), bfKernel, self.detector_id
-        )
-        self.butler.put(ipIsr.PhotonTransferCurveDataset(), ptc, self.detector_id)
-        self.butler.put(lsst.ip.isr.calibType.IsrCalib(), deferredChargeCalib, self.detector_id)
-        self.butler.put(lsst.ip.isr.crosstalk.CrosstalkCalib(), crosstalk, self.detector_id)
+        self.butler.put(self.ccdExposure, ccdExposure, self.exposure_id)
+        self.butler.put(self.camera, camera, self.instrument_id)
+        self.butler.put(self.bias, bias, self.detector_id)
+        self.butler.put(self.dark, dark, self.detector_id)
+        self.butler.put(self.flat, flat, self.flat_id)
+        self.butler.put(self.defects, defects, self.detector_id)
+        self.butler.put(self.bfKernel, bfKernel, self.detector_id)
+        self.butler.put(self.ptc, ptc, self.detector_id)
+        self.butler.put(self.cti, deferredChargeCalib, self.detector_id)
+        self.butler.put(self.crosstalk, crosstalk, self.detector_id)
         self.butler.put(lsst.ip.isr.linearize.Linearizer(), linearizer, self.detector_id)
-        self.butler.put(lsst.ip.isr.calibType.IsrCalib(), gainCorrection, self.detector_id)
+        self.butler.put(
+            lsst.ip.isr.GainCorrection(
+                ampNames=ampNames,
+                gainAdjustments=[1.0 for x in ampNames],
+            ),
+            gainCorrection,
+            self.detector_id
+        )
 
     def tearDown(self):
         del self.repo_path  # this removes the temporary directory
