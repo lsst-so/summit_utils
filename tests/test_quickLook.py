@@ -23,7 +23,6 @@ import contextlib
 import tempfile
 import unittest
 
-import lsst.afw.cameraGeom.testUtils as afwTestUtils
 import lsst.afw.image as afwImage
 import lsst.daf.butler.tests as butlerTests
 import lsst.ip.isr as ipIsr
