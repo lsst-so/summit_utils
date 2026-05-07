@@ -101,7 +101,6 @@ class QuickLookIsrTask(pipeBase.PipelineTask):
         # Note that this is not an instance of the IsrTask class, but the class
         # itself, which is then instantiated later on, in the run() method,
         # with the dynamically generated config.
-        # import pdb; pdb.set_trace()
         if IsrTaskLSST._DefaultName != "isrLSST":
             raise RuntimeError("QuickLookIsrTask should now always use IsrTaskLSST for processing.")
         self.isrTask = IsrTaskLSST

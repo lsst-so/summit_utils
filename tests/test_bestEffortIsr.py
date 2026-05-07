@@ -37,9 +37,7 @@ class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
             raise unittest.SkipTest("Skipping tests that require the LATISS butler repo.")
 
         # chosen as this is available in the following locations - collections:
-        # NCSA - LATISS/raw/all
-        # TTS - LATISS-test-data-tts
-        # summit - LATISS_test_data
+        # main@USDF - LATISS/raw/all
         cls.dataId = {"day_obs": 20251021, "seq_num": 443, "detector": 0}
 
     def test_getExposure(self):
