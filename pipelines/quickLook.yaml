@@ -4,3 +4,5 @@ tasks:
     class: lsst.summit.utils.quickLook.QuickLookIsrTask
     config:
       doRepairCosmics: true
+      doCorrectGains: false
+      doDeferredCharge: false

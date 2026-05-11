@@ -23,18 +23,14 @@ import contextlib
 import tempfile
 import unittest
 
-import numpy as np
-
-import lsst.afw.cameraGeom.testUtils as afwTestUtils
 import lsst.afw.image as afwImage
 import lsst.daf.butler.tests as butlerTests
 import lsst.ip.isr as ipIsr
-import lsst.ip.isr.isrMock as isrMock
+import lsst.ip.isr.isrMockLSST as isrMock
 import lsst.pex.exceptions
 import lsst.pipe.base as pipeBase
 import lsst.pipe.base.testUtils
 import lsst.utils.tests
-from lsst.afw.image import TransmissionCurve
 from lsst.summit.utils.quickLook import QuickLookIsrTask, QuickLookIsrTaskConfig
 
 
@@ -42,25 +38,23 @@ class QuickLookIsrTaskTestCase(unittest.TestCase):
     """Tests of the run method with fake data."""
 
     def setUp(self):
-        self.mockConfig = isrMock.IsrMockConfig()
-        self.dataContainer = isrMock.MockDataContainer(config=self.mockConfig)
-        self.camera = isrMock.IsrMock(config=self.mockConfig).getCamera()
+        self.mockConfig = isrMock.IsrMockLSSTConfig()
+        self.camera = isrMock.IsrMockLSST(config=self.mockConfig).getCamera()
 
-        self.ccdExposure = isrMock.RawMock(config=self.mockConfig).run()
+        self.ccdExposure = isrMock.RawMockLSST(config=self.mockConfig).run()
         self.detector = self.ccdExposure.getDetector()
         amps = self.detector.getAmplifiers()
         ampNames = [amp.getName() for amp in amps]
 
         # # Mock other optional parameters
-        self.bias = self.dataContainer.get("bias")
-        self.dark = self.dataContainer.get("dark")
-        self.flat = self.dataContainer.get("flat")
-        self.defects = self.dataContainer.get("defects")
+        self.bias = isrMock.BiasMockLSST(config=self.mockConfig).run()
+        self.dark = isrMock.DarkMockLSST(config=self.mockConfig).run()
+        self.flat = isrMock.FlatMockLSST(config=self.mockConfig).run()
+        self.defects = isrMock.DefectMockLSST(config=self.mockConfig).run()
         self.ptc = ipIsr.PhotonTransferCurveDataset(ampNames=ampNames)  # Mock PTC dataset
-        self.bfKernel = self.dataContainer.get("bfKernel")
-        self.newBFKernel = pipeBase.Struct(gain={})
-        for amp_i, amp in enumerate(ampNames):
-            self.newBFKernel.gain[amp] = 0.9 + 0.1 * amp_i
+        for amp, gain in self.mockConfig.gainDict.items():
+            self.ptc.gain[amp] = 1.0
+        self.bfKernel = isrMock.BfKernelMockLSST(config=self.mockConfig).run()
         self.task = QuickLookIsrTask(config=QuickLookIsrTaskConfig())
 
     def test_runQuickLook(self):
@@ -75,9 +69,7 @@ class QuickLookIsrTaskTestCase(unittest.TestCase):
             linearizer=None,
             crosstalk=None,
             bfKernel=self.bfKernel,
-            newBFKernel=self.newBFKernel,
             ptc=self.ptc,
-            crosstalkSources=None,
         )
         self.assertIsNotNone(result, "Result of run method should not be None")
         self.assertIsInstance(result, pipeBase.Struct, "Result should be of type lsst.pipe.base.Struct")
@@ -88,8 +80,8 @@ class QuickLookIsrTaskTestCase(unittest.TestCase):
         )
 
     def test_runQuickLookMissingData(self):
-        # Test without any inputs other than the exposure
-        result = self.task.run(self.ccdExposure)
+        # Test without any inputs other than the exposure.  And the PTC.
+        result = self.task.run(self.ccdExposure, ptc=self.ptc)
         self.assertIsInstance(result.exposure, afwImage.Exposure)
 
     def test_runQuickLookBadDark(self):
@@ -115,7 +107,29 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
     """
 
     def setUp(self):
-        instrument = "testCam"
+        # These need to be real, not empty:
+        self.mockConfig = isrMock.IsrMockLSSTConfig()
+        self.camera = isrMock.IsrMockLSST(config=self.mockConfig).getCamera()
+
+        self.ccdExposure = isrMock.RawMockLSST(config=self.mockConfig).run()
+        self.bias = isrMock.BiasMockLSST(config=self.mockConfig).run()
+        self.dark = isrMock.DarkMockLSST(config=self.mockConfig).run()
+        self.flat = isrMock.FlatMockLSST(config=self.mockConfig).run()
+        self.defects = isrMock.DefectMockLSST(config=self.mockConfig).run()
+
+        amps = self.ccdExposure.getDetector().getAmplifiers()
+        ampNames = [amp.getName() for amp in amps]
+        self.ptc = ipIsr.PhotonTransferCurveDataset(ampNames=ampNames)  # Mock PTC dataset
+        for amp, gain in self.mockConfig.gainDict.items():
+            self.ptc.gain[amp] = 1.0
+        self.crosstalk = lsst.ip.isr.crosstalk.CrosstalkCalib(nAmp=len(ampNames))
+        self.crosstalk.hasCrosstalk = True
+        self.cti = isrMock.DeferredChargeMockLSST(config=self.mockConfig).run()
+        self.mockConfig.doDeferredCharge = False  # TODO: DM-54880
+        self.bfKernel = isrMock.BfKernelMockLSST(config=self.mockConfig).run()
+
+        # dataId values:
+        instrument = self.camera.getName()
         exposureId = 100
         visit = 100101
         detector = 0
@@ -130,23 +144,16 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
         dark = "dark"
         flat = "flat"
         defects = "defects"
-        bfKernel = "bfKernel"
-        newBFKernel = "brighterFatterKernel"
+        bfKernel = "bfk"
         ptc = "ptc"
-        filterTransmission = "transmission_filter"
-        deferredChargeCalib = "cpCtiCalib"
-        opticsTransmission = "transmission_optics"
-        strayLightData = "yBackground"
-        atmosphereTransmission = "transmission_atmosphere"
+        deferredChargeCalib = "cti"
         crosstalk = "crosstalk"
-        illumMaskedImage = "illum"
         linearizer = "linearizer"
-        fringes = "fringe"
-        sensorTransmission = "transmission_sensor"
-        crosstalkSources = "isrOverscanCorrected"
+        gainCorrection = "gain_correction"
 
         # outputs
         outputExposure = "postISRCCD"
+        outputStatistics = "isrStatistics"
 
         # quickLook-only outputs
         exposure = "quickLookExp"
@@ -171,36 +178,19 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
         butlerTests.addDatasetType(self.repo, defects, {"instrument", "detector"}, "Defects")
         butlerTests.addDatasetType(self.repo, linearizer, {"instrument", "detector"}, "Linearizer")
         butlerTests.addDatasetType(self.repo, crosstalk, {"instrument", "detector"}, "CrosstalkCalib")
-        butlerTests.addDatasetType(self.repo, bfKernel, {"instrument"}, "NumpyArray")
-        butlerTests.addDatasetType(self.repo, newBFKernel, {"instrument", "detector"}, "BrighterFatterKernel")
+        butlerTests.addDatasetType(self.repo, bfKernel, {"instrument", "detector"}, "BrighterFatterKernel")
         butlerTests.addDatasetType(self.repo, ptc, {"instrument", "detector"}, "PhotonTransferCurveDataset")
-        butlerTests.addDatasetType(
-            self.repo, filterTransmission, {"instrument", "physical_filter"}, "TransmissionCurve"
-        )
-        butlerTests.addDatasetType(self.repo, opticsTransmission, {"instrument"}, "TransmissionCurve")
         butlerTests.addDatasetType(self.repo, deferredChargeCalib, {"instrument", "detector"}, "IsrCalib")
-        butlerTests.addDatasetType(
-            self.repo, strayLightData, {"instrument", "physical_filter", "detector"}, "Exposure"
-        )
-        butlerTests.addDatasetType(self.repo, atmosphereTransmission, {"instrument"}, "TransmissionCurve")
-        butlerTests.addDatasetType(
-            self.repo, illumMaskedImage, {"instrument", "physical_filter", "detector"}, "MaskedImage"
-        )
-        butlerTests.addDatasetType(
-            self.repo, fringes, {"instrument", "physical_filter", "detector"}, "Exposure"
-        )
-        butlerTests.addDatasetType(
-            self.repo, sensorTransmission, {"instrument", "detector"}, "TransmissionCurve"
-        )
-        butlerTests.addDatasetType(
-            self.repo, crosstalkSources, {"instrument", "exposure", "detector"}, "Exposure"
-        )
+        butlerTests.addDatasetType(self.repo, gainCorrection, {"instrument", "detector"}, "IsrCalib")
 
         # outputs
         butlerTests.addDatasetType(
             self.repo, outputExposure, {"instrument", "exposure", "detector"}, "Exposure"
         )
         butlerTests.addDatasetType(self.repo, exposure, {"instrument", "exposure", "detector"}, "Exposure")
+        butlerTests.addDatasetType(
+            self.repo, outputStatistics, {"instrument", "exposure", "detector"}, "StructuredDataDict"
+        )
 
         # dataIds
         self.exposure_id = self.repo.registry.expandDataId(
@@ -221,32 +211,26 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
         )
 
         # put empty data
-        transmissionCurve = TransmissionCurve.makeSpatiallyConstant(
-            np.ones(2), np.linspace(0, 1, 2), 0.0, 0.0
-        )
         self.butler = butlerTests.makeTestCollection(self.repo)
-        self.butler.put(afwImage.ExposureF(), ccdExposure, self.exposure_id)
-        self.butler.put(afwTestUtils.CameraWrapper().camera, camera, self.instrument_id)
-        self.butler.put(afwImage.ExposureF(), bias, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), dark, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), flat, self.flat_id)
-        self.butler.put(lsst.ip.isr.Defects(), defects, self.detector_id)
-        self.butler.put(np.zeros(2), bfKernel, self.instrument_id)
-        self.butler.put(
-            lsst.ip.isr.brighterFatterKernel.BrighterFatterKernel(), newBFKernel, self.detector_id
-        )
-        self.butler.put(ipIsr.PhotonTransferCurveDataset(), ptc, self.detector_id)
-        self.butler.put(transmissionCurve, filterTransmission, self.filter_id)
-        self.butler.put(lsst.ip.isr.calibType.IsrCalib(), deferredChargeCalib, self.detector_id)
-        self.butler.put(transmissionCurve, opticsTransmission, self.instrument_id)
-        self.butler.put(afwImage.ExposureF(), strayLightData, self.flat_id)
-        self.butler.put(transmissionCurve, atmosphereTransmission, self.instrument_id)
-        self.butler.put(lsst.ip.isr.crosstalk.CrosstalkCalib(), crosstalk, self.detector_id)
-        self.butler.put(afwImage.ExposureF().maskedImage, illumMaskedImage, self.flat_id)
+        self.butler.put(self.ccdExposure, ccdExposure, self.exposure_id)
+        self.butler.put(self.camera, camera, self.instrument_id)
+        self.butler.put(self.bias, bias, self.detector_id)
+        self.butler.put(self.dark, dark, self.detector_id)
+        self.butler.put(self.flat, flat, self.flat_id)
+        self.butler.put(self.defects, defects, self.detector_id)
+        self.butler.put(self.bfKernel, bfKernel, self.detector_id)
+        self.butler.put(self.ptc, ptc, self.detector_id)
+        self.butler.put(self.cti, deferredChargeCalib, self.detector_id)
+        self.butler.put(self.crosstalk, crosstalk, self.detector_id)
         self.butler.put(lsst.ip.isr.linearize.Linearizer(), linearizer, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), fringes, self.flat_id)
-        self.butler.put(transmissionCurve, sensorTransmission, self.detector_id)
-        self.butler.put(afwImage.ExposureF(), crosstalkSources, self.exposure_id)
+        self.butler.put(
+            lsst.ip.isr.GainCorrection(
+                ampNames=ampNames,
+                gainAdjustments=[1.0 for x in ampNames],
+            ),
+            gainCorrection,
+            self.detector_id,
+        )
 
     def tearDown(self):
         del self.repo_path  # this removes the temporary directory
@@ -260,11 +244,10 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
         config.qa.doThumbnailFlattened = False
         config.doCalculateStatistics = False
 
-        # Turn on all optional inputs
-        config.doAttachTransmissionCurve = True
-        config.doIlluminationCorrection = True
-        config.doStrayLight = True
-        config.doDeferredCharge = True
+        # Turn on all optional inputs, except CTI, as that isn't
+        # defined for LATISS.
+        config.doDeferredCharge = False
+
         config.usePtcReadNoise = True
         config.doCrosstalk = True
         config.doBrighterFatter = True
@@ -288,22 +271,16 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
                 "dark": self.detector_id,
                 "flat": self.flat_id,
                 "defects": self.detector_id,
-                "bfKernel": self.instrument_id,
-                "newBFKernel": self.detector_id,
+                "bfKernel": self.detector_id,
                 "ptc": self.detector_id,
-                "filterTransmission": self.filter_id,
                 "deferredChargeCalib": self.detector_id,
-                "opticsTransmission": self.instrument_id,
-                "strayLightData": self.flat_id,
-                "atmosphereTransmission": self.instrument_id,
                 "crosstalk": self.detector_id,
-                "illumMaskedImage": self.flat_id,
                 "linearizer": self.detector_id,
                 "fringes": self.flat_id,
-                "sensorTransmission": self.detector_id,
-                "crosstalkSources": [self.exposure_id, self.exposure_id],
+                "gainCorrection": self.detector_id,
                 # outputs
                 "outputExposure": self.exposure_id,
+                "outputStatistics": self.exposure_id,
                 "exposure": self.exposure_id,
             },
         )
@@ -321,3 +298,16 @@ class ExitMockError(Exception):
     """A custom exception to catch during a unit test."""
 
     pass
+
+
+class TestMemory(lsst.utils.tests.MemoryTestCase):
+    pass
+
+
+def setup_module(module):
+    lsst.utils.tests.init()
+
+
+if __name__ == "__main__":
+    lsst.utils.tests.init()
+    unittest.main()
