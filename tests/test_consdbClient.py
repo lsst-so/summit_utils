@@ -202,7 +202,83 @@ def test_client(client):
     assert "clean_url" in str(client.session.hooks["response"])
 
 
+@responses.activate
+def test_insert_obs_id(client):
+    """An integer obs_id targets the ``.../obs/{obs_id}`` endpoint."""
+    responses.post(
+        "http://example.com/consdb/insert/latiss/exposure/obs/271828",
+        json={"message": "Data inserted"},
+        match=[
+            responses.matchers.json_params_matcher(
+                {"table": "exposure", "obs_id": 271828, "values": {"foo": 1}}
+            ),
+        ],
+    )
+    assert client.insert("latiss", "exposure", 271828, {"foo": 1}).json()["message"] == "Data inserted"
+
+
+@responses.activate
+def test_insert_by_seq_num(client):
+    """A 2-tuple targets the ``.../{day_obs}/{seq_num}`` endpoint."""
+    responses.post(
+        "http://example.com/consdb/insert/latiss/exposure/by_seq_num/20240603/123",
+        json={"message": "Data inserted"},
+        match=[
+            responses.matchers.json_params_matcher({"table": "exposure", "values": {"foo": 1}}),
+        ],
+    )
+    assert (
+        client.insert("latiss", "exposure", (20240603, 123), {"foo": 1}).json()["message"] == "Data inserted"
+    )
+
+
+@responses.activate
+def test_insert_by_seq_num_detector(client):
+    """A 3-tuple targets the ``.../{day_obs}/{seq_num}/{detector}``
+    endpoint for per-detector (ccdexposure-level) tables."""
+    responses.post(
+        "http://example.com/consdb/insert/lsstcam/ccdexposure/by_seq_num/20240603/123/94",
+        json={"message": "Data inserted"},
+        match=[
+            responses.matchers.json_params_matcher({"table": "ccdexposure", "values": {"foo": 1}}),
+        ],
+    )
+    assert (
+        client.insert("lsstcam", "ccdexposure", (20240603, 123, 94), {"foo": 1}).json()["message"]
+        == "Data inserted"
+    )
+
+
+@responses.activate
+def test_insert_allow_update(client):
+    """allow_update appends ``?u=1`` to upsert against the addressed key."""
+    responses.post(
+        "http://example.com/consdb/insert/lsstcam/ccdexposure/by_seq_num/20240603/123/94?u=1",
+        json={"message": "Data inserted"},
+        match=[responses.matchers.query_param_matcher({"u": "1"})],
+    )
+    assert (
+        client.insert("lsstcam", "ccdexposure", (20240603, 123, 94), {"foo": 1}, allow_update=True).json()[
+            "message"
+        ]
+        == "Data inserted"
+    )
+
+
+def test_insert_bad_obs_id_tuple(client):
+    """A tuple that is not length 2 or 3 is rejected before any request."""
+    with pytest.raises(AssertionError, match="obs_id tuple"):
+        client.insert("latiss", "exposure", (20240603,), {"foo": 1})
+    with pytest.raises(AssertionError, match="obs_id tuple"):
+        client.insert("latiss", "exposure", (20240603, 123, 94, 0), {"foo": 1})
+
+
+def test_insert_no_values(client):
+    """Inserting with no values raises before any request."""
+    with pytest.raises(ValueError, match="No values to insert"):
+        client.insert("latiss", "exposure", 271828, {})
+
+
 # TODO: more POST tests
-#    client.insert(instrument, table, obs_id, values, allow_update)
 #    client.insert_multiple(instrument, table, obs_dict, allow_update)
 #    client.query(query)

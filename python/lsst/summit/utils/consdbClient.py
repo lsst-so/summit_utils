@@ -481,7 +481,7 @@ class ConsDbClient:
         self,
         instrument: str,
         table: str,
-        obs_id: tuple[int, int] | int,
+        obs_id: tuple[int, int] | tuple[int, int, int] | int,
         values: Mapping[str, Any],
         *,
         allow_update: bool = False,
@@ -495,8 +495,18 @@ class ConsDbClient:
             Name of the instrument (e.g. ``LATISS``).
         table : `str`
             Name of the table to insert into.
-        obs_id : `tuple` [ `int`, `int`] or `int`
-            Unique observation id or day_obs and seq_num.
+        obs_id : `tuple`[`int`, `int`] | `tuple`[`int`, `int`, `int`] | `int`
+            How to address the row to insert:
+
+            - `int`: the natural observation id (e.g. ``exposure_id``,
+              ``ccdexposure_id``), targeting the ``.../obs/{obs_id}``
+              endpoint.
+            - 2-tuple ``(day_obs, seq_num)``: targeting the
+              ``.../by_seq_num/{day_obs}/{seq_num}`` endpoint, for
+              exposure-level tables.
+            - 3-tuple ``(day_obs, seq_num, detector)``: targeting the
+              ``.../by_seq_num/{day_obs}/{seq_num}/{detector}`` endpoint,
+              for ccdexposure-level (per-detector) tables.
         values : `Mapping` [ `str`, `Any` ]
             Dictionary-like mapping of column/value pairs to add for the
             observation.
@@ -526,6 +536,11 @@ class ConsDbClient:
 
         data: dict[str, Any]
         if isinstance(obs_id, tuple):
+            assert len(obs_id) in (
+                2,
+                3,
+            ), f"obs_id tuple must be (day_obs, seq_num) or (day_obs, seq_num, detector); got {obs_id!r}"
+
             data = {"table": table, "values": merged_values}
             url = _urljoin(
                 self.url,
@@ -533,8 +548,9 @@ class ConsDbClient:
                 quote(instrument),
                 quote(table),
                 "by_seq_num",
-                quote(str(obs_id[0])),
-                quote(str(obs_id[1])),
+                # Two segments for exposure-level tables, three when a
+                # detector is supplied for ccdexposure-level tables.
+                *(quote(str(part)) for part in obs_id),
             )
         else:
             data = {"table": table, "obs_id": obs_id, "values": merged_values}
