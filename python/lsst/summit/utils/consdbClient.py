@@ -740,18 +740,40 @@ def getCcdVisitTableForDay(
     table : `astropy.table.Table`
         The resulting table.
     """
-    extraVisit: str = ", " + ", ".join(f"v.{item}" for item in visitTableItems) if visitTableItems else ""
+    # ``cvq.*`` already pulls in every column of ccdvisit1_quicklook, so any
+    # column we also name explicitly from ccdvisit1/visit1 has to be dropped
+    # from the SELECT when the quicklook table itself already defines it.
+    # ConsDB has been denormalising identity columns (visit_id, detector,
+    # seq_num, ...) onto the quicklook tables, and selecting such a column
+    # twice makes the server return duplicate column names, which astropy then
+    # refuses to build a Table from. getWideQuicklookTableForDay does the same
+    # dedup for the visit1 join.
+    cvqCols = set(client.query("SELECT * FROM cdb_LSSTCam.ccdvisit1_quicklook LIMIT 0").colnames)
+
+    visitItems = ["band", "exp_time", "seq_num", "day_obs", "img_type"]
+    if visitTableItems:
+        visitItems += visitTableItems
+
+    selectClauses = ["cvq.*"]
+    claimed = set(cvqCols)  # cvq.* already provides all of these names
+    for col in ("detector", "visit_id"):
+        if col not in claimed:
+            selectClauses.append(f"cv.{col}")
+            claimed.add(col)
+    for col in visitItems:
+        if col not in claimed:
+            selectClauses.append(f"v.{col}")
+            claimed.add(col)
+
     query = (
-        "SELECT cvq.*, "
-        "cv.detector, cv.visit_id, "
-        f"v.band, v.exp_time, v.seq_num, v.day_obs, v.img_type{extraVisit} "
+        f"SELECT {', '.join(selectClauses)} "
         "FROM cdb_LSSTCam.ccdvisit1_quicklook as cvq, "
         "cdb_LSSTCam.ccdvisit1 as cv, "
         "cdb_LSSTCam.visit1 as v "
     )
     where = f"WHERE cvq.ccdvisit_id=cv.ccdvisit_id and cv.visit_id=v.visit_id and v.day_obs={dayObs}"
     if detectors:
-        where += f" and detector in ({','.join([str(d) for d in detectors])})"
+        where += f" and cv.detector in ({','.join([str(d) for d in detectors])})"
     if withZeropoint:
         where += " and cvq.zero_point is not null"
 

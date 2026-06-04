@@ -19,11 +19,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
+
 import pytest
 import responses
+from astropy.table import Table
 from requests import HTTPError
 
 from lsst.summit.utils import ConsDbClient, FlexibleMetadataInfo
+from lsst.summit.utils.consdbClient import getCcdVisitTableForDay
 
 
 @pytest.fixture
@@ -277,6 +281,66 @@ def test_insert_no_values(client):
     """Inserting with no values raises before any request."""
     with pytest.raises(ValueError, match="No values to insert"):
         client.insert("latiss", "exposure", 271828, {})
+
+
+@responses.activate
+def test_getCcdVisitTableForDay_dedupes_overlapping_columns(client):
+    """Columns already present in ccdvisit1_quicklook must not be re-selected.
+
+    ``cvq.*`` pulls in every column of ccdvisit1_quicklook. As ConsDB
+    denormalises identity columns (visit_id, detector, seq_num, ...) onto the
+    quicklook table, naming those again explicitly from the joined tables makes
+    the server return duplicate column names, which astropy refuses to build a
+    Table from (DM-55152). They must be dropped from the SELECT instead.
+    """
+    url = "http://example.com/consdb/query"
+
+    # First query is the LIMIT 0 schema probe: pretend the quicklook table has
+    # denormalised visit_id, detector and seq_num onto itself.
+    responses.post(
+        url,
+        json={"columns": ["ccdvisit_id", "visit_id", "detector", "seq_num", "psf_sigma"], "data": []},
+    )
+    # Second query is the real data query; its response only has to build
+    # cleanly, the behaviour under test is the SELECT clause that was sent.
+    responses.post(
+        url,
+        json={
+            "columns": ["ccdvisit_id", "visit_id", "detector", "seq_num", "psf_sigma", "band"],
+            "data": [[1, 100, 7, 5, 1.2, "r"]],
+        },
+    )
+
+    table = getCcdVisitTableForDay(client, 20240101)
+    assert isinstance(table, Table)
+
+    # Only inspect the SELECT clause; the WHERE clause legitimately references
+    # cv.visit_id etc. in its join conditions.
+    sentQuery = json.loads(responses.calls[1].request.body)["query"]
+    selectClause = sentQuery.split(" FROM ")[0]
+    # Columns already provided by cvq.* must not be re-selected explicitly...
+    assert "cvq.*" in selectClause
+    assert "cv.visit_id" not in selectClause
+    assert "cv.detector" not in selectClause
+    assert "v.seq_num" not in selectClause
+    # ...but columns the quicklook table lacks must still be pulled from visit1
+    for col in ("v.band", "v.exp_time", "v.day_obs", "v.img_type"):
+        assert col in selectClause
+
+
+@responses.activate
+def test_getCcdVisitTableForDay_keeps_columns_when_no_overlap(client):
+    """When the quicklook table shares no names, every extra is selected."""
+    url = "http://example.com/consdb/query"
+    responses.post(url, json={"columns": ["ccdvisit_id", "psf_sigma"], "data": []})
+    responses.post(url, json={"columns": ["ccdvisit_id", "psf_sigma"], "data": [[1, 1.2]]})
+
+    getCcdVisitTableForDay(client, 20240101)
+
+    sentQuery = json.loads(responses.calls[1].request.body)["query"]
+    selectClause = sentQuery.split(" FROM ")[0]
+    for col in ("cv.detector", "cv.visit_id", "v.band", "v.exp_time", "v.seq_num", "v.day_obs", "v.img_type"):
+        assert col in selectClause
 
 
 # TODO: more POST tests
