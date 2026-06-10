@@ -104,7 +104,7 @@ def calculateMountErrors(
     client: EfdClient,
     maxDelta: float = 0.1,
     doFilterResiduals: bool = False,
-    useMockPointingModelResidualsAboveAzEl: float = 10.0,
+    useMockPointingModelResidualsAboveAzEl: float = 100.0,
     useMockPointingModelResidualsAboveRot: float = 15.0,
 ) -> tuple[MountErrors, MountData] | tuple[None, None]:
     """Queries the EFD over a given exposure and calculates the RMS errors
