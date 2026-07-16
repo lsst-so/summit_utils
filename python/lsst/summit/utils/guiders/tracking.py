@@ -338,7 +338,7 @@ def applyQualityCuts(
 
     # Filter by minimum number of detections and maximum ellipticity
     eabs = np.hypot(stars["e1"], stars["e2"])
-    mask3 = (stars["e1"].abs() <= maxEllipticity) & (stars["e1"].abs() <= maxEllipticity)
+    mask3 = (stars["e1"].abs() <= maxEllipticity) & (stars["e2"].abs() <= maxEllipticity)
     mask3 &= eabs <= maxEllipticity
 
     # Add edge margin mask
@@ -382,7 +382,7 @@ def _diagnoseQualityCutRejections(
     snrOk = (stars["snr"] >= minSnr) & (stars["flux"] > 0) & (stars["flux_err"] > 0)
 
     eabs = np.hypot(stars["e1"], stars["e2"])
-    ellipOk = (stars["e1"].abs() <= maxEllipticity) & (stars["e1"].abs() <= maxEllipticity)
+    ellipOk = (stars["e1"].abs() <= maxEllipticity) & (stars["e2"].abs() <= maxEllipticity)
     ellipOk &= eabs <= maxEllipticity
 
     edgeOk = (
