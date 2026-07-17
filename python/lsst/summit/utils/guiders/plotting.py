@@ -367,7 +367,9 @@ class GuiderPlotter:
 
         for i, (ax, c) in enumerate(zip(axes, cols)):
             _zero(ax, c)
-            fitter = RobustFitter()
+            # 5-sigma inlier band on the residual scatter (not the raw,
+            # trend-inflated spread); the old default rejected too many points.
+            fitter = RobustFitter(residualScale=5.0, residualFromFit=True)
             res = fitter.fit(x=np.asarray(df["elapsed_time"].values), y=(df[c].values * scale))
             txt = (
                 f"Slope: {expTime * res.slope:.2f} {unit}/exposure\n"

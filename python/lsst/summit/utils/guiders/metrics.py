@@ -296,7 +296,9 @@ def computeTrendMetrics(
     exptime = s["exptime"].max()
     global_std = float(mad_std(y))
 
-    fitter = RobustFitter()
+    # 5-sigma inlier band on the residual scatter (not the raw, trend-inflated
+    # spread); the old default (1.5 x MAD of raw y) rejected too many points.
+    fitter = RobustFitter(residualScale=5.0, residualFromFit=True)
     fit_res = fitter.fit(x, y)
 
     return GuiderDriftResult(

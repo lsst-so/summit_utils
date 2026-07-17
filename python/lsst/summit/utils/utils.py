@@ -1505,10 +1505,26 @@ class RobustFitter:
     ----------
     minSamples : `float`, optional
         Minimum fraction of samples chosen randomly from the original data.
+    residualScale : `float`, optional
+        Multiplier on the robust scatter used to set the RANSAC inlier band
+        (the default residual threshold). Larger values keep more points.
+    residualFromFit : `bool`, optional
+        If `True`, the robust scatter is the MAD-std of the residuals about a
+        first-pass linear fit (a true n-sigma-of-scatter cut). If `False`
+        (default, back-compatible), it is the MAD-std of the raw ``y`` values,
+        which is inflated by any trend.
     """
 
-    def __init__(self, *, minSamples: float = 0.2) -> None:
+    def __init__(
+        self,
+        *,
+        minSamples: float = 0.2,
+        residualScale: float = 1.5,
+        residualFromFit: bool = False,
+    ) -> None:
         self.minSamples = minSamples
+        self.residualScale = residualScale
+        self.residualFromFit = residualFromFit
         self._clearState()
 
     def _clearState(self) -> None:
@@ -1527,13 +1543,24 @@ class RobustFitter:
         self.slopeTValue = np.nan
         self.scatter = np.nan
 
-    @staticmethod
-    def _defaultResidualThreshold(y: np.ndarray) -> float:
-        """Compute default residual threshold from finite y values."""
-        yFinite = np.asarray(y)[np.isfinite(y)]
-        if yFinite.size == 0:
+    def _defaultResidualThreshold(self, x: np.ndarray, y: np.ndarray) -> float:
+        """Compute the default RANSAC residual threshold.
+
+        The threshold is ``residualScale`` times a robust scatter estimate.
+        With ``residualFromFit`` the scatter is the MAD-std of the residuals
+        about a first-pass least-squares line (a true n-sigma-of-scatter
+        band); otherwise it is the MAD-std of the raw ``y`` (the historical
+        behaviour, inflated by any trend). ``x`` and ``y`` are assumed finite.
+        """
+        y = np.asarray(y)
+        if y.size == 0:
             raise ValueError("Cannot compute residual threshold: no finite y.")
-        return 1.5 * float(mad_std(yFinite))
+        scatter = float(mad_std(y))
+        if self.residualFromFit and y.size >= 3 and np.ptp(np.asarray(x)) > 0:
+            coeffs = np.polyfit(np.asarray(x), y, 1)
+            resid = y - np.polyval(coeffs, np.asarray(x))
+            scatter = float(mad_std(resid))
+        return self.residualScale * scatter
 
     def fit(
         self,
@@ -1555,8 +1582,8 @@ class RobustFitter:
         y : array-like
             Dependent variable values.
         residualThreshold : float, optional
-            Residual threshold for inlier detection. If None, computed
-            as 1.5 × MAD of y.
+            Residual threshold for inlier detection. If None, computed as
+            ``residualScale`` × robust scatter (see ``residualFromFit``).
         randomState : int, optional
             Random seed for RANSAC.
 
@@ -1583,7 +1610,7 @@ class RobustFitter:
         yFit = y[finiteMask]
 
         if residualThreshold is None:
-            residualThreshold = self._defaultResidualThreshold(yFit)
+            residualThreshold = self._defaultResidualThreshold(x[finiteMask], yFit)
 
         ransac = RANSACRegressor(
             estimator=LinearRegression(),
