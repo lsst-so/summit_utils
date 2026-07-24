@@ -24,7 +24,7 @@ import datetime
 import os
 import random
 import unittest
-from typing import Iterable
+from typing import Any, Iterable
 
 import lsst.daf.butler as dafButler
 import lsst.utils.tests
@@ -140,13 +140,13 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
             )
 
     def test_sanitizeDayObs(self) -> None:
-        dayObs = "2020-01-02"
+        dayObs: str | int = "2020-01-02"
         self.assertEqual(sanitizeDayObs(dayObs), 20200102)
         dayObs = 20210201
         self.assertEqual(sanitizeDayObs(dayObs), dayObs)
 
         with self.assertRaises(ValueError):
-            sanitizeDayObs(1.234)
+            sanitizeDayObs(1.234)  # type: ignore[arg-type]
             sanitizeDayObs("Febuary 29th, 1970")
 
     def test_getMostRecentDayObs(self) -> None:
@@ -387,7 +387,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
 
     def test_updateDataId(self) -> None:
         # check with a dataCoordinate
-        dataId = copy.copy(self.expRecordNoDetector.dataId)
+        dataId: Any = copy.copy(self.expRecordNoDetector.dataId)
         self.assertTrue("detector" not in dataId)
         dataId = updateDataId(dataId, detector=123)
         self.assertTrue("detector" in dataId)
@@ -406,6 +406,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         expId = self.expIdOnly["exposure"]
         dayObs = self.dayObsSeqNumIdOnly["day_obs"]
         seqNum = self.dayObsSeqNumIdOnly["seq_num"]
+        assert seqNum is not None
 
         recordByExpId = getExpRecord(self.butler, "LATISS", expId=expId)
         self.assertIsInstance(recordByExpId, dafButler.DimensionRecord)
@@ -438,20 +439,20 @@ class ButlerInitTestCase(lsst.utils.tests.TestCase):
             if "DAF_BUTLER_REPOSITORY_INDEX" in os.environ:  # can't del unless it's already there
                 del os.environ["DAF_BUTLER_REPOSITORY_INDEX"]
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("LATISS")
+                dafButler.Butler("LATISS")  # type: ignore[abstract]
 
         # If DAF_BUTLER_REPOSITORY_INDEX is present but is just an empty
         # string then using a label raises a RuntimeError
         with unittest.mock.patch.dict(os.environ, {"DAF_BUTLER_REPOSITORY_INDEX": ""}):
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("LATISS")
+                dafButler.Butler("LATISS")  # type: ignore[abstract]
 
         # If DAF_BUTLER_REPOSITORY_INDEX _is_ set, we can't rely on any given
         # camera existing, but we can check that we get the expected error
         # when trying to init an instrument which definitely won't be defined.
         if os.getenv("DAF_BUTLER_REPOSITORY_INDEX"):
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("NotAValidCameraName")
+                dafButler.Butler("NotAValidCameraName")  # type: ignore[abstract]
 
     def test_makeDefaultLatissButlerRaiseTypes(self) -> None:
         """makeDefaultLatissButler unifies the mixed exception types from

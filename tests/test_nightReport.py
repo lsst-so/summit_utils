@@ -136,6 +136,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         """Test the exposure midpoint calculation"""
         # we would like a non-zero exptime exposure really
         seqNumToUse = 0
+        expTime = 0
         for seqNum in self.report.data.keys():
             expTime = self.report.data[seqNum]["exposure_time"]
             if expTime > 0:
@@ -238,6 +239,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
     def test_internals(self) -> None:
         startNum = self.report.getObservingStartSeqNum()
         self.assertIsInstance(startNum, int)
+        assert startNum is not None
         self.assertGreater(startNum, 0)  # the day starts at 1, so zero would be an error of some sort
 
         starsFromGetter = self.report.getObservedObjects()

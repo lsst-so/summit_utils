@@ -83,9 +83,9 @@ class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
         required.
         """
         connections = QuickLookIsrTask.ConfigClass.ConnectionsClass(config=QuickLookIsrTask.ConfigClass())
-        self.assertEqual(connections.bias.minimum, 0)
-        self.assertEqual(connections.flat.minimum, 0)
-        self.assertEqual(connections.ccdExposure.minimum, 1)
+        self.assertEqual(connections.bias.minimum, 0)  # type: ignore[attr-defined]
+        self.assertEqual(connections.flat.minimum, 0)  # type: ignore[attr-defined]
+        self.assertEqual(connections.ccdExposure.minimum, 1)  # type: ignore[attr-defined]
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):

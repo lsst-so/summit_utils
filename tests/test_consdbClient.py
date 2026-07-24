@@ -272,9 +272,9 @@ def test_insert_allow_update(client: ConsDbClient) -> None:
 def test_insert_bad_obs_id_tuple(client: ConsDbClient) -> None:
     """A tuple that is not length 2 or 3 is rejected before any request."""
     with pytest.raises(AssertionError, match="obs_id tuple"):
-        client.insert("latiss", "exposure", (20240603,), {"foo": 1})
+        client.insert("latiss", "exposure", (20240603,), {"foo": 1})  # type: ignore[arg-type]
     with pytest.raises(AssertionError, match="obs_id tuple"):
-        client.insert("latiss", "exposure", (20240603, 123, 94, 0), {"foo": 1})
+        client.insert("latiss", "exposure", (20240603, 123, 94, 0), {"foo": 1})  # type: ignore[arg-type]
 
 
 def test_insert_no_values(client: ConsDbClient) -> None:
@@ -316,7 +316,9 @@ def test_getCcdVisitTableForDay_dedupes_overlapping_columns(client: ConsDbClient
 
     # Only inspect the SELECT clause; the WHERE clause legitimately references
     # cv.visit_id etc. in its join conditions.
-    sentQuery = json.loads(responses.calls[1].request.body)["query"]
+    requestBody = responses.calls[1].request.body
+    assert requestBody is not None
+    sentQuery = json.loads(requestBody)["query"]
     selectClause = sentQuery.split(" FROM ")[0]
     # Columns already provided by cvq.* must not be re-selected explicitly...
     assert "cvq.*" in selectClause
@@ -337,7 +339,9 @@ def test_getCcdVisitTableForDay_keeps_columns_when_no_overlap(client: ConsDbClie
 
     getCcdVisitTableForDay(client, 20240101)
 
-    sentQuery = json.loads(responses.calls[1].request.body)["query"]
+    requestBody = responses.calls[1].request.body
+    assert requestBody is not None
+    sentQuery = json.loads(requestBody)["query"]
     selectClause = sentQuery.split(" FROM ")[0]
     for col in ("cv.detector", "cv.visit_id", "v.band", "v.exp_time", "v.seq_num", "v.day_obs", "v.img_type"):
         assert col in selectClause

@@ -201,6 +201,7 @@ class BlockParserTestCase(lsst.utils.tests.TestCase):
                 seqNums = blockParser.getSeqNums(block)
                 for seqNum in seqNums:
                     blockInfo = blockParser.getBlockInfo(block, seqNum)
+                    assert blockInfo is not None
                     line = data[blockInfo.blockNumber, blockInfo.seqNum]
                     items = line.split(f"{DELIMITER}")
                     self.assertEqual(items[0], blockInfo.blockId)
