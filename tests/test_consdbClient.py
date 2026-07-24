@@ -31,14 +31,14 @@ from lsst.summit.utils.consdbClient import getCcdVisitTableForDay
 
 
 @pytest.fixture
-def client():
+def client() -> ConsDbClient:
     """Initialize client with a fake url
     Requires mocking connection with @responses.activate decorator
     """
     return ConsDbClient("http://example.com/consdb")
 
 
-def test_table_name():
+def test_table_name() -> None:
     instrument = "latiss"
     obs_type = "exposure"
     assert (
@@ -48,7 +48,7 @@ def test_table_name():
 
 
 @responses.activate
-def test_add_flexible_metadata_key(client):
+def test_add_flexible_metadata_key(client: ConsDbClient) -> None:
     instrument = "latiss"
     obs_type = "exposure"
     responses.post(
@@ -106,7 +106,7 @@ def test_add_flexible_metadata_key(client):
 
 
 @responses.activate
-def test_get_flexible_metadata_keys(client):
+def test_get_flexible_metadata_keys(client: ConsDbClient) -> None:
     description = {"foo": ["bool", "a", None, None], "bar": ["float", "b", "deg", "pos.eq.ra"]}
     responses.get(
         "http://example.com/consdb/flex/latiss/exposure/schema",
@@ -121,7 +121,7 @@ def test_get_flexible_metadata_keys(client):
 
 
 @responses.activate
-def test_get_flexible_metadata(client):
+def test_get_flexible_metadata(client: ConsDbClient) -> None:
     results = {"bool_key": True, "int_key": 42, "float_key": 3.14159, "str_key": "foo"}
     responses.get(
         "http://example.com/consdb/flex/latiss/exposure/obs/271828",
@@ -148,7 +148,7 @@ def test_get_flexible_metadata(client):
 
 
 @responses.activate
-def test_insert_flexible_metadata(client):
+def test_insert_flexible_metadata(client: ConsDbClient) -> None:
     instrument = "latiss"
     obs_type = "exposure"
     with pytest.raises(ValueError):
@@ -157,7 +157,7 @@ def test_insert_flexible_metadata(client):
 
 
 @responses.activate
-def test_schema(client):
+def test_schema(client: ConsDbClient) -> None:
     description = {"foo": ("bool", "a"), "bar": ("int", "b")}
     responses.get(
         "http://example.com/consdb/schema/latiss/misc_table",
@@ -178,7 +178,7 @@ def test_schema(client):
         (":alberta94", "***:al***"),
     ],
 )
-def test_clean_token_url_response(secret, redacted):
+def test_clean_token_url_response(secret: str, redacted: str) -> None:
     """Test tokens URL is cleaned when an error is thrown from requests
     Use with pytest raises assert an error'
     assert that url does not contain tokens
@@ -201,13 +201,13 @@ def test_clean_token_url_response(secret, redacted):
     assert url == sanitized
 
 
-def test_client(client):
+def test_client(client: ConsDbClient) -> None:
     """Test ConsDbClient is initialized properly"""
     assert "clean_url" in str(client.session.hooks["response"])
 
 
 @responses.activate
-def test_insert_obs_id(client):
+def test_insert_obs_id(client: ConsDbClient) -> None:
     """An integer obs_id targets the ``.../obs/{obs_id}`` endpoint."""
     responses.post(
         "http://example.com/consdb/insert/latiss/exposure/obs/271828",
@@ -222,7 +222,7 @@ def test_insert_obs_id(client):
 
 
 @responses.activate
-def test_insert_by_seq_num(client):
+def test_insert_by_seq_num(client: ConsDbClient) -> None:
     """A 2-tuple targets the ``.../{day_obs}/{seq_num}`` endpoint."""
     responses.post(
         "http://example.com/consdb/insert/latiss/exposure/by_seq_num/20240603/123",
@@ -237,7 +237,7 @@ def test_insert_by_seq_num(client):
 
 
 @responses.activate
-def test_insert_by_seq_num_detector(client):
+def test_insert_by_seq_num_detector(client: ConsDbClient) -> None:
     """A 3-tuple targets the ``.../{day_obs}/{seq_num}/{detector}``
     endpoint for per-detector (ccdexposure-level) tables."""
     responses.post(
@@ -254,7 +254,7 @@ def test_insert_by_seq_num_detector(client):
 
 
 @responses.activate
-def test_insert_allow_update(client):
+def test_insert_allow_update(client: ConsDbClient) -> None:
     """allow_update appends ``?u=1`` to upsert against the addressed key."""
     responses.post(
         "http://example.com/consdb/insert/lsstcam/ccdexposure/by_seq_num/20240603/123/94?u=1",
@@ -269,7 +269,7 @@ def test_insert_allow_update(client):
     )
 
 
-def test_insert_bad_obs_id_tuple(client):
+def test_insert_bad_obs_id_tuple(client: ConsDbClient) -> None:
     """A tuple that is not length 2 or 3 is rejected before any request."""
     with pytest.raises(AssertionError, match="obs_id tuple"):
         client.insert("latiss", "exposure", (20240603,), {"foo": 1})
@@ -277,14 +277,14 @@ def test_insert_bad_obs_id_tuple(client):
         client.insert("latiss", "exposure", (20240603, 123, 94, 0), {"foo": 1})
 
 
-def test_insert_no_values(client):
+def test_insert_no_values(client: ConsDbClient) -> None:
     """Inserting with no values raises before any request."""
     with pytest.raises(ValueError, match="No values to insert"):
         client.insert("latiss", "exposure", 271828, {})
 
 
 @responses.activate
-def test_getCcdVisitTableForDay_dedupes_overlapping_columns(client):
+def test_getCcdVisitTableForDay_dedupes_overlapping_columns(client: ConsDbClient) -> None:
     """Columns already present in ccdvisit1_quicklook must not be re-selected.
 
     ``cvq.*`` pulls in every column of ccdvisit1_quicklook. As ConsDB
@@ -329,7 +329,7 @@ def test_getCcdVisitTableForDay_dedupes_overlapping_columns(client):
 
 
 @responses.activate
-def test_getCcdVisitTableForDay_keeps_columns_when_no_overlap(client):
+def test_getCcdVisitTableForDay_keeps_columns_when_no_overlap(client: ConsDbClient) -> None:
     """When the quicklook table shares no names, every extra is selected."""
     url = "http://example.com/consdb/query"
     responses.post(url, json={"columns": ["ccdvisit_id", "psf_sigma"], "data": []})

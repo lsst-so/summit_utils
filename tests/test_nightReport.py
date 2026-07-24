@@ -35,13 +35,21 @@ import lsst.utils.tests
 mpl.use("Agg")
 
 import lsst.summit.utils.butlerUtils as butlerUtils  # noqa: E402
+from lsst.daf.butler import Butler  # noqa: E402
 from lsst.summit.utils.nightReport import ColorAndMarker, NightReport  # noqa: E402
 from lsst.summit.utils.utils import getSite  # noqa: E402
 
 
 class NightReportTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    butler: Butler
+    dayObs: int
+    report: NightReport
+    nImages: int
+    seqNums: list[int]
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             if getSite() == "jenkins":
                 raise unittest.SkipTest("Skip running butler-driven tests in Jenkins.")
@@ -61,7 +69,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         cls.nImages = len(cls.report.data.keys())
         cls.seqNums = list(cls.report.data.keys())
 
-    def test_saveAndLoad(self):
+    def test_saveAndLoad(self) -> None:
         """Test that a NightReport can save itself, and be loaded back."""
         writeDir = tempfile.mkdtemp()
         saveFile = os.path.join(writeDir, f"testNightReport_{self.dayObs}.pickle")
@@ -75,7 +83,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
 
         # TODO: add a self.assertRaises on a mismatched dayObs
 
-    def test_getSortedData(self):
+    def test_getSortedData(self) -> None:
         """Test the _getSortedData returns the seqNums in order."""
         shuffledKeys = list(self.report.data.keys())
         shuffle(shuffledKeys)
@@ -86,7 +94,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(sortedKeys, list(self.report.data.keys()))
         return
 
-    def test_getExpRecordDictForDayObs(self):
+    def test_getExpRecordDictForDayObs(self) -> None:
         """Test getExpRecordDictForDayObs.
 
         Test it returns a dict of dicts, keyed by integer seqNums.
@@ -103,7 +111,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(all(isinstance(expRecDict[s], dict) for s in seqNums))
         return
 
-    def test_getObsInfoAndMetadataForSeqNum(self):
+    def test_getObsInfoAndMetadataForSeqNum(self) -> None:
         """Test that getObsInfoAndMetadataForSeqNum returns the correct
         types.
         """
@@ -113,7 +121,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertIsInstance(md, dict)
         return
 
-    def test_rebuild(self):
+    def test_rebuild(self) -> None:
         """Test that rebuild does nothing, as no data will be being added.
 
         NB Do not call full=True on this, as it will double the length of the
@@ -124,7 +132,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(len(self.report.data), lenBefore)
         return
 
-    def test_getExposureMidpoint(self):
+    def test_getExposureMidpoint(self) -> None:
         """Test the exposure midpoint calculation"""
         # we would like a non-zero exptime exposure really
         seqNumToUse = 0
@@ -145,13 +153,13 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
             self.assertLess(midPoint, record["datetime_end"].to_datetime())
         return
 
-    def test_getTimeDeltas(self):
+    def test_getTimeDeltas(self) -> None:
         """Test the time delta calculation returns a dict."""
         dts = self.report.getTimeDeltas()
         self.assertIsInstance(dts, dict)
         return
 
-    def test_makeStarColorAndMarkerMap(self):
+    def test_makeStarColorAndMarkerMap(self) -> None:
         """Test the color map maker returns a dict of ColorAndMarker
         objects.
         """
@@ -162,7 +170,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(all(isinstance(value, ColorAndMarker) for value in values))
         return
 
-    def test_printObsTable(self):
+    def test_printObsTable(self) -> None:
         """Test that a the printObsTable() method prints out the correct
         number of lines.
         """
@@ -172,7 +180,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         # newline for each row plus header line, plus the line with dashes
         self.assertEqual(len(fake_stdout.mock_calls), 2 * (self.nImages + 2))
 
-    def test_plotPerObjectAirMass(self):
+    def test_plotPerObjectAirMass(self) -> None:
         """Test that a the per-object airmass plots runs."""
         # We assume matplotlib is making plots, so just check that these
         # don't crash.
@@ -188,7 +196,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         # flip and select stars
         self.report.plotPerObjectAirMass(objects=self.report.stars[0], airmassOneAtTop=True)  # both
 
-    def test_makeAltAzCoveragePlot(self):
+    def test_makeAltAzCoveragePlot(self) -> None:
         """Test that a the polar coverage plotting code runs."""
         # We assume matplotlib is making plots, so just check that these
         # don't crash.
@@ -202,7 +210,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         # test turning lines off
         self.report.makeAltAzCoveragePlot(objects=self.report.stars[0:2], withLines=False)
 
-    def test_calcShutterTimes(self):
+    def test_calcShutterTimes(self) -> None:
         timings = self.report.calcShutterTimes()
         if not timings:
             return  # if the day has no on-sky observations, this returns None
@@ -210,13 +218,13 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         self.assertGreater(efficiency, 0)
         self.assertLessEqual(efficiency, 100)
 
-    def test_getDatesForSeqNums(self):
+    def test_getDatesForSeqNums(self) -> None:
         dateTimeDict = self.report.getDatesForSeqNums()
         self.assertIsInstance(dateTimeDict, dict)
         self.assertTrue(all(isinstance(seqNum, int) for seqNum in dateTimeDict.keys()))
         self.assertTrue(all(isinstance(seqNum, datetime.datetime) for seqNum in dateTimeDict.values()))
 
-    def test_doesNotRaise(self):
+    def test_doesNotRaise(self) -> None:
         """Tests for things which are hard to test, so just make sure they
         run.
         """
@@ -227,7 +235,7 @@ class NightReportTestCase(lsst.utils.tests.TestCase):
         for threshold, includeCalibs in itertools.product((0, 1, 10), (True, False)):
             self.report.printObsGaps(threshold=threshold, includeCalibs=includeCalibs)
 
-    def test_internals(self):
+    def test_internals(self) -> None:
         startNum = self.report.getObservingStartSeqNum()
         self.assertIsInstance(startNum, int)
         self.assertGreater(startNum, 0)  # the day starts at 1, so zero would be an error of some sort
@@ -247,7 +255,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 
