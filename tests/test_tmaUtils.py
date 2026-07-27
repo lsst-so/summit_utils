@@ -597,9 +597,11 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(len(eventsWithBlockInfo), 65)
         self.assertEqual(len(eventsWithoutBlockInfo), 4)
 
-        self.assertIsNotNone(eventsWithoutBlockInfo[0].blockInfos)
-        self.assertIsInstance(eventsWithoutBlockInfo[0].blockInfos, list)
-        self.assertEqual(len(eventsWithoutBlockInfo[0].blockInfos), 0)
+        firstBlockInfos = eventsWithoutBlockInfo[0].blockInfos
+        self.assertIsNotNone(firstBlockInfos)
+        self.assertIsInstance(firstBlockInfos, list)
+        assert firstBlockInfos is not None  # narrow for mypy; asserted non-None just above
+        self.assertEqual(len(firstBlockInfos), 0)
 
         event = eventsWithBlockInfo[0]
         self.assertIsInstance(event, TMAEvent)

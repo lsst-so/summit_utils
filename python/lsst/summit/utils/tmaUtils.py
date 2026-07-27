@@ -851,7 +851,7 @@ class TMAEvent:
     duration: float  # seconds
     begin: Time
     end: Time
-    blockInfos: list = field(default_factory=list)
+    blockInfos: list | None = field(default_factory=list)
     version: int = 0  # update this number any time a code change which could change event definitions is made
     _startRow: int
     _endRow: int
@@ -974,7 +974,7 @@ class TMAEvent:
         if blockSeqNum is not None and block is None:
             raise ValueError("block must be specified if blockSeqNum is specified")
 
-        for blockInfo in self.blockInfos:
+        for blockInfo in self.blockInfos or []:
             # "X is None or" is used for each parameter to allow it to be None
             # in the kwargs
             blockMatches = False
