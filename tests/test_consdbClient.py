@@ -24,10 +24,14 @@ import json
 import pytest
 import responses
 from astropy.table import Table
-from requests import HTTPError
+from requests import HTTPError, Response, Timeout
 
 from lsst.summit.utils import ConsDbClient, FlexibleMetadataInfo
-from lsst.summit.utils.consdbClient import getCcdVisitTableForDay
+from lsst.summit.utils.consdbClient import (
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_READ_TIMEOUT,
+    getCcdVisitTableForDay,
+)
 
 
 @pytest.fixture
@@ -204,6 +208,60 @@ def test_clean_token_url_response(secret, redacted):
 def test_client(client):
     """Test ConsDbClient is initialized properly"""
     assert "clean_url" in str(client.session.hooks["response"])
+    assert client.connect_timeout == DEFAULT_CONNECT_TIMEOUT
+    assert client.read_timeout == DEFAULT_READ_TIMEOUT
+    assert client.timeout == (DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
+
+
+def test_timeout_override():
+    """The timeouts are configurable, including disabling them entirely."""
+    tuned = ConsDbClient("http://example.com/consdb", connect_timeout=5, read_timeout=30)
+    assert tuned.timeout == (5, 30)
+    unbounded = ConsDbClient("http://example.com/consdb", connect_timeout=None, read_timeout=None)
+    assert unbounded.timeout == (None, None)
+
+
+def test_get_passes_timeout(client, monkeypatch):
+    """GET requests must carry a timeout so a stalled server cannot hang."""
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured.update(kwargs)
+        response = Response()
+        response.status_code = 200
+        response._content = b"{}"
+        return response
+
+    monkeypatch.setattr(client.session, "get", fake_get)
+    client.schema()
+    assert captured["timeout"] == (DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
+
+
+def test_post_passes_timeout(client, monkeypatch):
+    """POST requests must carry a timeout so a stalled server cannot hang."""
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs)
+        response = Response()
+        response.status_code = 200
+        response._content = b'{"message": "Data inserted"}'
+        return response
+
+    monkeypatch.setattr(client.session, "post", fake_post)
+    client.insert("latiss", "exposure", 271828, {"foo": 1})
+    assert captured["timeout"] == (DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
+
+
+def test_timeout_propagates(client, monkeypatch):
+    """A timed-out request surfaces as requests.Timeout to the caller."""
+
+    def fake_get(url, **kwargs):
+        raise Timeout("timed out")
+
+    monkeypatch.setattr(client.session, "get", fake_get)
+    with pytest.raises(Timeout):
+        client.schema()
 
 
 @responses.activate
