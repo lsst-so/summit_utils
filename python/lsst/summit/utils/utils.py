@@ -142,7 +142,7 @@ def countPixels(maskedImage: afwImage.MaskedImage, maskPlane: str) -> int:
     return len(np.where(np.bitwise_and(maskedImage.mask.array, bit))[0])
 
 
-def quickSmooth(data: npt.NDArray[np.float64], sigma: float = 2) -> npt.NDArray[np.float64]:
+def quickSmooth(data: npt.NDArray[np.floating[Any]], sigma: float = 2) -> npt.NDArray[np.floating[Any]]:
     """Perform a quick smoothing of the image.
 
     Not to be used for scientific purposes, but improves the stretch and
