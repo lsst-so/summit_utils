@@ -25,6 +25,7 @@ import asyncio
 import json
 import os
 import unittest
+from typing import Any
 
 import pandas as pd
 from utils import getVcr
@@ -107,9 +108,18 @@ def writeNewBlockInfoTestTruthValues(dayObs: int) -> None:
 @unittest.skipIf(not HAS_EFD_CLIENT, "No EFD client available")
 @vcr.use_cassette()
 class BlockParserTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    client: Any
+    dayObsNoTestCases: int
+    dayObsWithCases: int
+    dayObsNoBlocks: int
+    blockParser: BlockParser
+    blockNums: list[str]
+    blockDict: dict[str, list[int]]
+
     @classmethod
     @vcr.use_cassette()
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             cls.client = makeEfdClient(testing=True)
         except RuntimeError:
@@ -125,13 +135,13 @@ class BlockParserTestCase(lsst.utils.tests.TestCase):
             cls.blockDict[block] = cls.blockParser.getSeqNums(block)
 
     @vcr.use_cassette()
-    def tearDown(self):
+    def tearDown(self) -> None:
         loop = asyncio.get_event_loop()
         if self.client.influx_client is not None:
             loop.run_until_complete(self.client.influx_client.close())
 
     @vcr.use_cassette()
-    def test_parsing(self):
+    def test_parsing(self) -> None:
         blockNums = self.blockParser.getBlockNums()
         self.assertTrue(all(isinstance(n, str)) for n in blockNums)
         self.assertEqual(blockNums, list(self.blockDict.keys()))
@@ -154,7 +164,7 @@ class BlockParserTestCase(lsst.utils.tests.TestCase):
                 self.blockParser.printBlockEvolution(block, seqNum=seqNum)
 
     @vcr.use_cassette()
-    def test_notFoundBehavior(self):
+    def test_notFoundBehavior(self) -> None:
         # no block data on this day so check init doesn't raise
         blockParser = BlockParser(dayObs=self.dayObsNoBlocks, client=self.client)
         self.assertIsInstance(blockParser, BlockParser)
@@ -182,7 +192,7 @@ class BlockParserTestCase(lsst.utils.tests.TestCase):
         blockParser.getBlockInfo(block=9999999, seqNum=9999999)
 
     @vcr.use_cassette()
-    def test_actualValues(self):
+    def test_actualValues(self) -> None:
         for dayObs in [self.dayObsNoTestCases, self.dayObsWithCases]:
             data = getBlockInfoTestTruthValues(dayObs)
             blockParser = BlockParser(dayObs, client=self.client)
@@ -205,7 +215,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

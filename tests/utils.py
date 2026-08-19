@@ -26,7 +26,7 @@ import vcr
 __all__ = ("getVcr",)
 
 
-def getVcr():
+def getVcr() -> vcr.VCR:
     """Get a VCR object for use in tests.
 
     Use record_mode="none" to run tests for normal operation. To update files

@@ -38,7 +38,7 @@ from lsst.summit.utils.dateTime import (  # TODO: add tests for efdTimestampToAs
 
 class DateTimeTestCase(lsst.utils.tests.TestCase):
 
-    def test_getDayObsAsTimes(self):
+    def test_getDayObsAsTimes(self) -> None:
         """This tests getDayObsStartTime and getDayObsEndTime explicitly,
         but the days we loop over are chosen to test calcNextDay() which is
         called by getDayObsEndTime().
@@ -61,7 +61,7 @@ class DateTimeTestCase(lsst.utils.tests.TestCase):
             self.assertGreater(dayEnd, dayStart)
             self.assertEqual(dayEnd.jd, dayStart.jd + 1)
 
-    def test_calcDayOffset(self):
+    def test_calcDayOffset(self) -> None:
         self.assertEqual(calcDayOffset(20230531, 20230601), 1)
         self.assertEqual(calcDayOffset(20230531, 20230530), -1)
         self.assertEqual(calcDayOffset(20230531, 20230531), 0)
@@ -72,7 +72,7 @@ class DateTimeTestCase(lsst.utils.tests.TestCase):
 
         self.assertNotEqual(calcDayOffset(20230531, 20230601), -1)
 
-    def test_getDayObsForTime(self):
+    def test_getDayObsForTime(self) -> None:
         pydate = datetime.datetime(2023, 2, 5, 13, 30, 1)
         time = Time(pydate)
         dayObs = getDayObsForTime(time)
@@ -89,7 +89,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

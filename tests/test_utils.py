@@ -63,7 +63,7 @@ from lsst.summit.utils.utils import (
 class ExpSkyPositionOffsetTestCase(lsst.utils.tests.TestCase):
     """A test case for testing sky position offsets for exposures."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         camera = Latiss.getCamera()
         self.assertTrue(len(camera) == 1)
         self.detector = camera[0]
@@ -79,7 +79,7 @@ class ExpSkyPositionOffsetTestCase(lsst.utils.tests.TestCase):
             location=AUXTEL_LOCATION,
         )
 
-    def test_getExpPositionOffset(self):
+    def test_getExpPositionOffset(self) -> None:
         epsilon = 0.0001
         ra1s = [0, 45, 90]
         ra2s = copy.copy(ra1s)
@@ -143,7 +143,7 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
     def setUp(self) -> None:
         return super().setUp()
 
-    def test_getFieldNameAndTileNumber(self):
+    def test_getFieldNameAndTileNumber(self) -> None:
         field, num = getFieldNameAndTileNumber("simple")
         self.assertEqual(field, "simple")
         self.assertIsNone(num)
@@ -176,7 +176,7 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(field, "test_321a:asd_asd-dsa")
         self.assertEqual(num, 321)
 
-    def test_getAirmassSeeingCorrection(self):
+    def test_getAirmassSeeingCorrection(self) -> None:
         for airmass in (1.1, 2.0, 20.0):
             correction = getAirmassSeeingCorrection(airmass)
             self.assertGreater(correction, 0.01)
@@ -188,14 +188,14 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
         with self.assertRaises(ValueError):
             getAirmassSeeingCorrection(0.5)
 
-    def test_getFilterSeeingCorrection(self):
+    def test_getFilterSeeingCorrection(self) -> None:
         for filterName in ("SDSSg_65mm", "SDSSr_65mm", "SDSSi_65mm"):
             with self.assertWarns(FutureWarning):
                 correction = getFilterSeeingCorrection(filterName)
             self.assertGreater(correction, 0.5)
             self.assertLess(correction, 1.5)
 
-    def test_getBandpassSeeingCorrection(self):
+    def test_getBandpassSeeingCorrection(self) -> None:
         for filterName in (
             "SDSSg_65mm",
             "SDSSr_65mm",
@@ -211,7 +211,7 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
             self.assertGreater(correction, 0.5)
             self.assertLess(correction, 1.5)
 
-    def test_quickSmooth(self):
+    def test_quickSmooth(self) -> None:
         # just test that it runs and returns the right shape. It's a wrapper on
         # scipy.ndimage.gaussian_filter we can trust that it does what it
         # should, and we just test the interface hasn't bitrotted on either end
@@ -219,7 +219,7 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
         data = quickSmooth(data, 5.0)
         self.assertEqual(data.shape, (100, 100))
 
-    def test_getCurrentDayObsDatetime(self):
+    def test_getCurrentDayObsDatetime(self) -> None:
         """Just a type check and a basic sanity check on the range.
 
         Setting days=3 as the tolerance just because of timezones and who knows
@@ -230,21 +230,21 @@ class MiscUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertLess(dt, datetime.date.today() + datetime.timedelta(days=3))
         self.assertGreater(dt, datetime.date.today() - datetime.timedelta(days=3))
 
-    def test_getCurrentDayObsInt(self):
+    def test_getCurrentDayObsInt(self) -> None:
         """Just a type check and a basic sanity check on the range."""
         dayObs = getCurrentDayObsInt()
         self.assertIsInstance(dayObs, int)
         self.assertLess(dayObs, 21000101)
         self.assertGreater(dayObs, 19700101)
 
-    def test_getCurrentDayObsHumanStr(self):
+    def test_getCurrentDayObsHumanStr(self) -> None:
         """Just a basic formatting check."""
         dateStr = getCurrentDayObsHumanStr()
         self.assertIsInstance(dateStr, str)
         self.assertEqual(len(dateStr), 10)
         self.assertRegex(dateStr, r"\d{4}-\d{2}-\d{2}")
 
-    def test_getSunAngle(self):
+    def test_getSunAngle(self) -> None:
         """Just a basic sanity check on the range."""
         testTime = Time("2021-09-15T16:00:00", format="isot", scale="utc")
         sunAngle = getSunAngle(testTime)
@@ -262,7 +262,7 @@ class QuantileTestCase(lsst.utils.tests.TestCase):
     def setUp(self) -> None:
         return super().setUp()
 
-    def test_quantiles(self):
+    def test_quantiles(self) -> None:
         # We understand that our algorithm gives very large rounding error
         # compared to the generic numpy method. But still test it.
         np.random.seed(1234)
@@ -283,7 +283,7 @@ class QuantileTestCase(lsst.utils.tests.TestCase):
 
 
 class ImageBasedTestCase(lsst.utils.tests.TestCase):
-    def test_fluxFromFootprint(self):
+    def test_fluxFromFootprint(self) -> None:
         image = afwImage.Image(
             np.arange(8100, dtype=np.int32).reshape(90, 90), xy0=lsst.geom.Point2I(10, 12), dtype="I"
         )
@@ -337,14 +337,14 @@ class ImageBasedTestCase(lsst.utils.tests.TestCase):
 
 
 class IdTestCase(lsst.utils.tests.TestCase):
-    def test_exposure_id(self):
+    def test_exposure_id(self) -> None:
         self.assertEqual(computeExposureId("latiss", "O", 20240402, 35), 2024040200035)
         self.assertEqual(computeExposureId("LATISS", "C", 20240402, 35), 2024040200035)
         self.assertEqual(computeExposureId("LSSTComCamSim", "S", 20240402, 35), 7024040200035)
         with self.assertRaises(ValueError):
             computeExposureId("bad_instrument", "O", 20240402, 35)
 
-    def test_ccdexposure_id(self):
+    def test_ccdexposure_id(self) -> None:
         self.assertEqual(computeCcdExposureId("latiss", 2024040200035, 0), 5205 * (2**23) + 35 * 256 + 0)
         with self.assertRaises(ValueError):
             computeCcdExposureId("latiss", 20240402000035, 1)
@@ -357,7 +357,7 @@ class IdTestCase(lsst.utils.tests.TestCase):
             5 * (2**37) + 5205 * (2**23) + 35 * 256 + 2,
         )
 
-    def test_calcEclipticCoords(self):
+    def test_calcEclipticCoords(self) -> None:
         ras = [0, 1, 45, 90, 180, 270, 359.9]
         decs = [-90, -80, -45, -1, 0, 1, 45, 90]
 
@@ -373,7 +373,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 
