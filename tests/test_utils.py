@@ -25,7 +25,7 @@ import copy
 import datetime
 import itertools
 import unittest
-from typing import Iterable
+from typing import Any, Iterable
 
 import astropy.time
 import astropy.units as u
@@ -81,14 +81,14 @@ class ExpSkyPositionOffsetTestCase(lsst.utils.tests.TestCase):
 
     def test_getExpPositionOffset(self) -> None:
         epsilon = 0.0001
-        ra1s = [0, 45, 90]
+        ra1s: Any = [0, 45, 90]
         ra2s = copy.copy(ra1s)
         ra2s.extend([r + epsilon for r in ra1s])
         ra1s = np.deg2rad(ra1s)
         ra2s = np.deg2rad(ra2s)
 
         epsilon = 0.0001
-        dec1s = [0, 45, 90]
+        dec1s: Any = [0, 45, 90]
         dec2s = copy.copy(dec1s)
         dec2s.extend([d + epsilon for d in dec1s[:-1]])  # skip last point as >90 not allowed for dec
 
@@ -276,7 +276,7 @@ class QuantileTestCase(lsst.utils.tests.TestCase):
                     edges1 = getQuantiles(data, nColors)
                 self.assertIn("Data range is very large", cm.output[0])
             else:
-                with self.assertNoLogs(level="WARNING") as cm:
+                with self.assertNoLogs(level="WARNING"):
                     edges1 = getQuantiles(data, nColors)
             edges2 = np.nanquantile(data, np.linspace(0, 1, nColors + 1))  # must check with nanquantile
             np.testing.assert_almost_equal(edges1, edges2, decimal=decimal)

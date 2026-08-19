@@ -40,7 +40,9 @@ class PlottingTestCase(lsst.utils.tests.TestCase):
     try:
         afwDataDir = lsst.utils.getPackageDir("afwdata")
     except Exception:
-        afwDataDir = None
+        # Empty rather than None so the attribute stays a str for the
+        # os.path.join below; skipUnless treats it as falsy either way.
+        afwDataDir = ""
     filename = "postISRCCD_2020021800224-EMPTY~EMPTY-det000.fits.fz"
 
     @classmethod
