@@ -143,13 +143,13 @@ class BlockParserTestCase(lsst.utils.tests.TestCase):
     @vcr.use_cassette()
     def test_parsing(self) -> None:
         blockNums = self.blockParser.getBlockNums()
-        self.assertTrue(all(isinstance(n, str)) for n in blockNums)
+        self.assertTrue(all(isinstance(n, str) for n in blockNums))
         self.assertEqual(blockNums, list(self.blockDict.keys()))
 
         for block, seqNums in self.blockDict.items():
             self.assertTrue(isinstance(block, str))
             self.assertIsInstance(seqNums, list)
-            self.assertTrue(all(isinstance(s, int)) for s in seqNums)
+            self.assertTrue(all(isinstance(s, int) for s in seqNums))
 
             found = self.blockParser.getSeqNums(block)
             self.assertTrue(all(isinstance(s, int) for s in found))
