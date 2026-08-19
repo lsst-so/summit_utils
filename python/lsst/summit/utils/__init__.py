@@ -24,6 +24,7 @@ from .butlerUtils import *
 from .consdbClient import *
 from .imageExaminer import *
 from .nightReport import *
+from .packageVersions import *
 from .peekExposure import *
 from .quickLook import *
 from .spectrumExaminer import *
