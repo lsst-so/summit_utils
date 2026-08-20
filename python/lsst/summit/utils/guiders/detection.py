@@ -438,7 +438,12 @@ def runGalSim(
     result : `StarMeasurement`
         Resulting measurement (empty if measurement failed).
     """
-    gsImg = galsim.Image(imageArray)
+    # Use a 0-based origin so moments_centroid matches numpy / afw / WCS pixel
+    # indexing. galsim.Image defaults to 1-based bounds (first pixel center at
+    # (1,1)), which offset the reported xroi/yroi by +1 px in each axis -- an
+    # offset that also propagated into the aperture centering, the centroid-error
+    # kernel, xccd/yccd, and the plotted red dot.
+    gsImg = galsim.Image(imageArray, xmin=0, ymin=0)
     hsmRes = galsim.hsm.FindAdaptiveMom(gsImg, strict=False)
     success = hsmRes.error_message == ""
 

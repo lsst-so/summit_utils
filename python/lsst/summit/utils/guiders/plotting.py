@@ -807,7 +807,10 @@ def renderStampPanel(
 
     region = img[y0:y1, x0:x1]
     vmin, vmax = np.nanpercentile(region, [plo, phi])
-    extent: tuple[float, float, float, float] = (float(x0), float(x1), float(y0), float(y1))
+    # Offset the extent by -0.5 so integer (0-based) pixel coordinates fall at
+    # pixel CENTERS. This aligns the star-centroid marker (drawn at xroi, yroi)
+    # and the crosshair with the displayed star, instead of the pixel corners.
+    extent: tuple[float, float, float, float] = (x0 - 0.5, x1 - 0.5, y0 - 0.5, y1 - 0.5)
 
     # Render only the visible region
     im = ax.imshow(
