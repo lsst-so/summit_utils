@@ -754,12 +754,16 @@ class GuiderReader:
             columnMaskK,
             biasPercentile,
         )
+        # Restrict the map to detectors actually read, so guiderNames and the
+        # GuiderData iterators stay in sync with rawStampsMap (some guiders may
+        # be absent for this exposure).
+        presentNameMap = {n: i for n, i in self.guiderNameMap.items() if n in processedStampsDict}
         guiderData = GuiderData(
             seqNum=seqNum,
             dayObs=dayObs,
             view=self.view,
             rawStampsMap=processedStampsDict,
-            guiderNameMap=self.guiderNameMap,
+            guiderNameMap=presentNameMap,
             wcsMap=wcsMapDict,
             camRotAngle=camRotAngle,
             isMedianSubtracted=doSubtractMedian,
@@ -784,6 +788,7 @@ class GuiderReader:
             Mapping from detector name to raw Stamps object.
         """
         rawStamps: dict[str, Stamps] = {}
+        missing: list[str] = []
         for detName, detNum in self.guiderNameMap.items():
             try:
                 rawStamps[detName] = self.butler.get(
@@ -793,8 +798,20 @@ class GuiderReader:
                     detector=detNum,
                     instrument="LSSTCam",
                 )
-            except DatasetNotFoundError as e:
-                raise DatasetNotFoundError(f"No data for {detName} on {dayObs=} {seqNum=}") from e
+            except DatasetNotFoundError:
+                # Skip guiders with no data rather than aborting the whole
+                # exposure: downstream analysis works with any subset (even one
+                # guider). Only fail if NO guider has data.
+                missing.append(detName)
+        if missing:
+            self.log.warning(
+                "No guider_raw for %s on dayObs=%s seqNum=%s; continuing with %d/%d guiders.",
+                ", ".join(missing), dayObs, seqNum, len(rawStamps), len(self.guiderNameMap),
+            )
+        if not rawStamps:
+            raise DatasetNotFoundError(
+                f"No guider data for any detector on {dayObs=} {seqNum=}"
+            )
         return rawStamps
 
     def processStamps(
