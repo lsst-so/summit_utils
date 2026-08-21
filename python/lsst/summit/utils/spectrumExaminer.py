@@ -414,7 +414,7 @@ class SpectrumExaminer:
             if amplitudes[longestListStartTruePosition] > amplitudeThreshold:
                 break
 
-        startOfLongList = np.sum(listLengths[0:longestListIndex])
+        startOfLongList = int(np.sum(listLengths[0:longestListIndex]))
         endOfLongList = startOfLongList + longestListLength
 
         endValue = endOfLongList

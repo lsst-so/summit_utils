@@ -35,6 +35,11 @@ __all__ = ["ConsDbClient", "FlexibleMetadataInfo", "getCcdVisitTableForDay", "ge
 
 logger = logging.getLogger(__name__)
 
+# Timeouts in seconds applied to every request made by ConsDbClient.
+# The read timeout is generous because some queries are genuinely slow.
+DEFAULT_CONNECT_TIMEOUT: float = 10.0
+DEFAULT_READ_TIMEOUT: float = 600.0
+
 
 def _urljoin(*args: str) -> str:
     """Join parts of a URL with slashes.
@@ -135,12 +140,19 @@ class ConsDbClient:
 
     Parameters
     ----------
-    url : `str`, optional
+    url : `str` | `None`
         Base URL of the Web service, defaults to the value of environment
         variable ``LSST_CONSDB_PQ_URL`` (the location of the publish/query
         service).
-    token : `str`, optional
+    token : `str` | `None`
         Authentication token for the RSP. The token must begin with "gt-".
+    connect_timeout : `float` | `None`
+        Seconds to wait for the connection to be established, defaults to
+        `DEFAULT_CONNECT_TIMEOUT`.
+    read_timeout : `float` | `None`
+        Seconds to wait between bytes sent by the server, defaults to
+        `DEFAULT_READ_TIMEOUT`.  Pass `None` to wait indefinitely, which is
+        rarely what you want.
 
     Notes
     -----
@@ -150,9 +162,17 @@ class ConsDbClient:
     It enforces the return of query results as Astropy Tables.
     """
 
-    def __init__(self, url: str | None = None, token: str | None = None):
+    def __init__(
+        self,
+        url: str | None = None,
+        token: str | None = None,
+        connect_timeout: float | None = DEFAULT_CONNECT_TIMEOUT,
+        read_timeout: float | None = DEFAULT_READ_TIMEOUT,
+    ):
         self.session = requests.Session()
         self.session.hooks["response"].append(clean_url)
+        self.connect_timeout = connect_timeout
+        self.read_timeout = read_timeout
 
         if token is not None:
             if not token.startswith("gt-"):
@@ -165,6 +185,13 @@ class ConsDbClient:
         else:
             self.url = url
         self.url = self.url.rstrip("/")
+
+    @property
+    def timeout(self) -> tuple[float | None, float | None]:
+        """The ``(connect, read)`` timeout pair passed to requests
+        (`tuple` [ `float` | `None`, `float` | `None` ], read-only).
+        """
+        return (self.connect_timeout, self.read_timeout)
 
     def _handle_get(self, url: str, query: dict[str, str | list[str]] | None = None) -> Any:
         """Submit GET requests to the server.
@@ -180,6 +207,8 @@ class ConsDbClient:
         ------
         requests.RequestException
             Raised if any kind of connection error occurs.
+        requests.Timeout
+            Raised if the request exceeds the client timeout.
         requests.HTTPError
             Raised if a non-successful status is returned.
         requests.JSONDecodeError
@@ -191,7 +220,7 @@ class ConsDbClient:
             Result of decoding the Web service result content as JSON.
         """
         logger.debug(f"GET {url}")
-        response = self.session.get(url, params=query)
+        response = self.session.get(url, params=query, timeout=self.timeout)
         _check_status(response)
         return response.json()
 
@@ -209,6 +238,8 @@ class ConsDbClient:
         ------
         requests.RequestException
             Raised if any kind of connection error occurs.
+        requests.Timeout
+            Raised if the request exceeds the client timeout.
         requests.HTTPError
             Raised if a non-successful status is returned.
 
@@ -218,7 +249,7 @@ class ConsDbClient:
             The raw Web service result object.
         """
         logger.debug(f"POST {url}: {data}")
-        response = self.session.post(url, json=data)
+        response = self.session.post(url, json=data, timeout=self.timeout)
         _check_status(response)
         return response
 
