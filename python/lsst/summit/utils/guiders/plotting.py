@@ -201,55 +201,70 @@ def _getWriter(filename: str) -> str:
 
 @dataclass(frozen=True)
 class MosaicLayout:
-    grid: list[tuple[str, ...]] = field(
-        default_factory=lambda: [
-            (".", "R40_SG1", "R44_SG0", "."),
-            ("R40_SG0", "center", ".", "R44_SG1"),
-            ("R00_SG1", ".", ".", "R04_SG0"),
-            ("arrow", "R00_SG0", "R04_SG1", "."),
-        ]
+    """Corner-paired guider mosaic layout.
+
+    Each corner raft's two SG panels sit together in that raft's focal-plane
+    corner (R00 lower-left, R04 lower-right, R40 upper-left, R44 upper-right),
+    with their 2" circles tangent at a point on the diagonal (45/135/225/315
+    deg). The arrangement is symmetric under x->-x and y->-y, as the focal plane
+    is. SG0/SG1 within a corner keep their physical relative orientation.
+
+    Positions are figure fractions; ``radius`` is the panel half-size (= the 2"
+    circle radius) and ``pairDist`` the diagonal distance from center to each
+    pair's tangent point. Panels are ``2*radius`` squares so the inscribed
+    circles of a pair (centers 2*radius apart) touch exactly.
+    """
+
+    radius: float = 0.135
+    pairDist: float = 0.27
+    # Detectors whose label must sit beside (not above) the circle because their
+    # panels reach the top edge of the figure: 'l'/'r' = left/right of the panel.
+    labelCorners: dict[str, str] = field(
+        default_factory=lambda: {"R40_SG1": "l", "R44_SG0": "r"}
     )
 
+    @property
+    def positions(self) -> dict[str, tuple[float, float]]:
+        """Center (figure-fraction x, y) of each guider panel."""
+        r, p, cx, cy = self.radius, self.pairDist, 0.5, 0.5
+        rr = r / np.sqrt(2)  # perpendicular offset so the pair touches on the diagonal
+        return {
+            # top-right (R44), tangent at (+p,+p)
+            "R44_SG0": (cx + p - rr, cy + p + rr), "R44_SG1": (cx + p + rr, cy + p - rr),
+            # top-left (R40), tangent at (-p,+p)
+            "R40_SG1": (cx - p + rr, cy + p + rr), "R40_SG0": (cx - p - rr, cy + p - rr),
+            # bottom-left (R00), tangent at (-p,-p)
+            "R00_SG1": (cx - p - rr, cy - p + rr), "R00_SG0": (cx - p + rr, cy - p - rr),
+            # bottom-right (R04), tangent at (+p,-p)
+            "R04_SG0": (cx + p + rr, cy - p + rr), "R04_SG1": (cx + p - rr, cy - p - rr),
+        }
+
     def build(
-        self,
-        *,
-        figsize: tuple[float, float] = (12, 12),
-        hspace: float = 0.0,
-        wspace: float = 0.0,
-        constrained_layout: bool = False,
+        self, *, figsize: tuple[float, float] = (12, 12), **_: Any
     ) -> tuple[plt.Figure, dict[str, plt.Axes]]:
-        """
-        Build the figure and axes dictionary for the predefined mosaic layout
-        using LSST's Agg-backed figure (no pyplot).
+        """Build the Agg-backed figure with explicitly placed panel axes.
 
         Parameters
         ----------
         figsize : `tuple[float, float]`, optional
-            Figure size in inches (width, height).
-        hspace : `float`, optional
-            Height space between subplots (gridspec hspace).
-        wspace : `float`, optional
-            Width space between subplots (gridspec wspace).
-        constrained_layout : `bool`, optional
-            Whether to enable Matplotlib constrained layout.
+            Figure size in inches (width, height); keep it square so the circles
+            render round.
 
         Returns
         -------
         fig : `matplotlib.figure.Figure`
             The created figure.
         axs : `dict[str, matplotlib.axes.Axes]`
-            Mapping from mosaic panel labels to axes.
+            Mapping from panel label (guider names + 'center', 'arrow') to axes.
         """
-        # 1) Create Agg-backed figure (no pyplot, no caching)
-        fig = make_figure(figsize=figsize, constrained_layout=constrained_layout)
-
-        # 2) Use Figure.subplot_mosaic (same signature as plt.subplot_mosaic)
-        axs: dict[str, plt.Axes] = fig.subplot_mosaic(
-            cast(Any, self.grid),
-            gridspec_kw=dict(hspace=hspace, wspace=wspace),
-            sharex=False,  # keep the original intent
-            sharey=False,
-        )
+        fig = make_figure(figsize=figsize, constrained_layout=False)
+        r = self.radius
+        axs: dict[str, plt.Axes] = {}
+        for name, (x, y) in self.positions.items():
+            axs[name] = fig.add_axes((x - r, y - r, 2 * r, 2 * r))
+        # exposure metadata (center) with the Alt/Az arrow directly beneath it
+        axs["center"] = fig.add_axes((0.34, 0.45, 0.32, 0.14))
+        axs["arrow"] = fig.add_axes((0.43, 0.30, 0.14, 0.13))
         return fig, axs
 
 
@@ -466,7 +481,10 @@ class GuiderPlotter:
 
             # Static overlays (reference frame elements)
             if not isAnimated:
-                addReferenceOverlays(ax, detName, starInfo.refCenter, cutoutSize)
+                addReferenceOverlays(
+                    ax, detName, starInfo.refCenter, cutoutSize,
+                    labelCorner=self.layout.labelCorners.get(detName, "tl"),
+                )
 
             # Animated overlays (star position elements)
             if starInfo.hasData and cutoutSize > 0:
@@ -492,7 +510,8 @@ class GuiderPlotter:
 
         # Center panel annotation
         stampInfo = annotateStampInfo(
-            axs["center"], expid=self.expId, stampNum=stampNum, nStamps=nStamps, view=view, jitter=jitter
+            axs["center"], expid=self.expId, stampNum=stampNum, nStamps=nStamps,
+            view=view, jitter=jitter, xy=(0.5, 0.5),
         )
         artists.append(stampInfo)
 
@@ -868,6 +887,16 @@ def labelDetector(
     text : `matplotlib.text.Text`
         Created text artist.
     """
+    # Side placements (vertically centered, just outside the panel) for panels
+    # that reach a figure edge, so the label stays on the page.
+    if corner in ("l", "r"):
+        sidePad = 0.06
+        xpos, ha = (-sidePad, "right") if corner == "l" else (1 + sidePad, "left")
+        return ax.text(
+            xpos, 0.5, name, transform=ax.transAxes, ha=ha, va="center",
+            fontsize=fontsize, weight=weight, color=color,
+        )
+
     ha, va = ("left", "top") if corner[0] == "t" else ("left", "bottom")
     ha = "right" if corner[1] == "r" else ha
     va = "top" if corner[0] == "t" else va
@@ -958,6 +987,7 @@ def addReferenceOverlays(
     detName: str,
     refCenter: tuple[float, float],
     cutoutSize: int,
+    labelCorner: str = "tl",
 ) -> None:
     """Add static reference overlays: detector label, crosshairs,
     and guide circles.
@@ -975,7 +1005,7 @@ def addReferenceOverlays(
     cutoutSize : `int`
         Cutout size; influences overlay scaling.
     """
-    labelDetector(ax, detName)
+    labelDetector(ax, detName, corner=labelCorner)
     if cutoutSize > 0:
         ax.axvline(refCenter[0], color=LIGHT_BLUE, lw=1.25, linestyle="--", alpha=0.75)
         ax.axhline(refCenter[1], color=LIGHT_BLUE, lw=1.25, linestyle="--", alpha=0.75)
