@@ -217,10 +217,15 @@ class MosaicLayout:
 
     radius: float = 0.135
     pairDist: float = 0.27
-    # Detectors whose label must sit beside (not above) the circle because their
-    # panels reach the top edge of the figure: 'l'/'r' = left/right of the panel.
+    # Where each detector's name sits, all OUTSIDE the 2" circle: 'ot' = above
+    # the circle (default). The top pair reaches the figure top, so those label
+    # to the side instead ('l'/'r').
     labelCorners: dict[str, str] = field(
-        default_factory=lambda: {"R40_SG1": "l", "R44_SG0": "r"}
+        default_factory=lambda: {
+            "R40_SG1": "l", "R44_SG0": "r",
+            "R44_SG1": "ot", "R04_SG0": "ot", "R40_SG0": "ot",
+            "R00_SG1": "ot", "R00_SG0": "ot", "R04_SG1": "ot",
+        }
     )
 
     @property
@@ -483,7 +488,7 @@ class GuiderPlotter:
             if not isAnimated:
                 addReferenceOverlays(
                     ax, detName, starInfo.refCenter, cutoutSize,
-                    labelCorner=self.layout.labelCorners.get(detName, "tl"),
+                    labelCorner=self.layout.labelCorners.get(detName, "ot"),
                 )
 
             # Animated overlays (star position elements)
@@ -887,8 +892,14 @@ def labelDetector(
     text : `matplotlib.text.Text`
         Created text artist.
     """
-    # Side placements (vertically centered, just outside the panel) for panels
-    # that reach a figure edge, so the label stays on the page.
+    # Placements outside the panel (hence outside the inscribed 2" circle):
+    #   'ot' = centered just above the circle; 'l'/'r' = beside it (vertically
+    #   centered), for panels that reach the top edge where 'ot' would clip.
+    if corner == "ot":
+        return ax.text(
+            0.5, 1.06, name, transform=ax.transAxes, ha="center", va="bottom",
+            fontsize=fontsize, weight=weight, color=color,
+        )
     if corner in ("l", "r"):
         sidePad = 0.06
         xpos, ha = (-sidePad, "right") if corner == "l" else (1 + sidePad, "left")
