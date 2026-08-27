@@ -40,13 +40,14 @@ VCR_CONFIG = {
 def getVcr() -> vcr.VCR:
     """Get a ``vcr.VCR`` for recording ``setUpClass`` methods.
 
-    Test methods (and their ``setUp``/``tearDown``) are handled by the
-    ``pytest-recording`` plugin, via ``@pytest.mark.vcr`` on the test class.
-    That plugin installs cassettes through a per-test fixture, so it cannot
-    cover ``setUpClass``, which runs before any per-test fixture. For that
-    case, use the returned object as ``@classVcr.use_cassette()``, which uses
-    the same configuration and cassette directory as the plugin. This can also
-    be nested inside the plugin's cassette to record a ``setUp`` method
+    Test methods (and their ``setUp``/``tearDown``) are handled by the VCR
+    pytest plugin (``pytest-recording``, or ``pytest-vcr`` in older
+    environments - see ``conftest.py``), via ``@pytest.mark.vcr`` on the test
+    class. The plugin installs cassettes through a per-test fixture, so it
+    cannot cover ``setUpClass``, which runs before any per-test fixture. For
+    that case, use the returned object as ``@classVcr.use_cassette()``, which
+    uses the same configuration and cassette directory as the plugin. This can
+    also be nested inside the plugin's cassette to record a ``setUp`` method
     separately from its tests.
 
     Cassettes live in ``tests/data/cassettes`` and are named after the bare
@@ -55,7 +56,8 @@ def getVcr() -> vcr.VCR:
     recordings for every module's ``setUpClass``.
 
     To update the cassettes or generate new ones, make sure you have a working
-    connection to the EFD and run with ``pytest --record-mode=all``, both
+    connection to the EFD and run with ``pytest --record-mode=all`` (or
+    ``--vcr-record=all`` when using ``pytest-vcr``), both
     via pytest directly and via scons, as these generate slightly different
     HTTP requests for some reason. Also make sure to do this at the summit
     (USDF coverage is provided by the same recording, since matching ignores
