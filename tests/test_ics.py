@@ -27,6 +27,7 @@ import unittest
 from typing import Any
 
 import matplotlib.pyplot as plt
+import pytest
 from utils import getVcr
 
 import lsst.utils.tests
@@ -35,10 +36,10 @@ from lsst.summit.utils.m1m3.inertia_compensation_system import evaluate_m1m3_ics
 from lsst.summit.utils.m1m3.plots.plot_ics import FIGURE_HEIGHT, FIGURE_WIDTH, plot_hp_measured_data
 from lsst.summit.utils.tmaUtils import TMAEvent, TMAEventMaker
 
-vcr = getVcr()
+classVcr = getVcr()
 
 
-@vcr.use_cassette()
+@pytest.mark.vcr
 class M1M3ICSTestCase(lsst.utils.tests.TestCase):
     # class attributes populated in setUp
     client: Any
@@ -51,7 +52,7 @@ class M1M3ICSTestCase(lsst.utils.tests.TestCase):
     log: logging.Logger
 
     @classmethod
-    @vcr.use_cassette()
+    @classVcr.use_cassette()  # setUp is recorded separately from each test
     def setUp(cls) -> None:
         try:
             cls.client = makeEfdClient(testing=True)
@@ -67,13 +68,11 @@ class M1M3ICSTestCase(lsst.utils.tests.TestCase):
         cls.outputDir = tempfile.mkdtemp()
         cls.log = logging.getLogger(__name__)
 
-    @vcr.use_cassette()
     def tearDown(self) -> None:
         loop = asyncio.get_event_loop()
         if self.client.influx_client is not None:
             loop.run_until_complete(self.client.influx_client.close())
 
-    @vcr.use_cassette()
     def test_analysis(self) -> None:
         self.log.info(f"Writing temp output files to {self.outputDir}")
         plotFilename = os.path.join(self.outputDir, "testPlotting_exp.jpg")
