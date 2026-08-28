@@ -27,6 +27,7 @@ __all__ = [
     "getAzElRotHexDataForExposure",
 ]
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -119,7 +120,7 @@ def getAzElRotHexDataForPeriod(
     camhexData = hexData[hexData["salIndex"] == 1]
     m2hexData = hexData[hexData["salIndex"] == 2]
 
-    def calcDeltaT(params, args):
+    def calcDeltaT(params: Sequence[float], args: Sequence[np.ndarray]) -> float:
         # This calculates the deltaT needed
         # to make the median(error) = 0
         [values, valTimes, demand, demTimes] = args
@@ -127,7 +128,7 @@ def getAzElRotHexDataForPeriod(
         demandInterp = np.interp(valTimes, demTimes + deltaT, demand)
         error = (values - demandInterp) * 3600
         value = abs(np.median(error))
-        return value
+        return float(value)
 
     azValues = np.asarray(azimuthData["actualPosition"])
     azValTimes = np.asarray(azimuthData["actualPositionTimestamp"])

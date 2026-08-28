@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 import matplotlib
 import numpy as np
@@ -107,7 +108,9 @@ def moffat2dFitFunction(
     return baseline + peak * (1 + (((x - x0) ** 2 + (y - y0) ** 2)) / alpha**2) ** (-beta)
 
 
-def doRadialAnalysis(data: np.ndarray, fitModel: str):
+def doRadialAnalysis(
+    data: np.ndarray, fitModel: str
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, float, float]:
     """Perform the radial analysis on a star cutout
 
     Parameters
@@ -121,8 +124,6 @@ def doRadialAnalysis(data: np.ndarray, fitModel: str):
     -------
     x: `np.ndarray`
         1d array with the radial from the centroid.
-    y: `np.ndarray`
-        1d array with the intensity value.
     yScatter: `np.ndarray`
         The flattened radial distribution of the start intensity.
         Usefull for plotting purpose.
@@ -480,7 +481,7 @@ def makePsfPanel(
     layers: list[str] | str = "all",
     fitModel: str = "moffat",
     levels: np.ndarray | Iterable[float] | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> matplotlib.figure.Figure:
     """Make a per-detector PSF radial analysis.
 
@@ -684,7 +685,7 @@ def makePanel(
     butler: Butler,
     visit: int,
     onlyS11: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> matplotlib.figure.Figure:
     """Create the panel with the in focus stars.
     See the documentation of `makePsfPanel` for more information.

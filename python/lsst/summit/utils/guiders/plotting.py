@@ -352,7 +352,7 @@ class GuiderPlotter:
         sigma = mad_std(yvals, ignore_nan=True)
         ylims = (p16 - 2.5 * sigma, p84 + 2.5 * sigma)
 
-        def _zero(ax, c):
+        def _zero(ax: plt.Axes, c: str) -> None:
             label = {
                 "daz": f"Az: {az:0.5f} deg",
                 "dalt": f"Alt: {alt:0.5f} deg",

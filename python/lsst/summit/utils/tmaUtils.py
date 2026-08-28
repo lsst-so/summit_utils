@@ -25,7 +25,7 @@ import enum
 import itertools
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -187,7 +187,7 @@ def getAzimuthElevationDataForEvent(
         The elevation data for the specified event.
     """
 
-    def calcDeltaT(params, args):
+    def calcDeltaT(params: Sequence[float], args: Sequence[np.ndarray]) -> float:
         # This calculates the deltaT needed
         # to make the median(error) = 0
         [values, valTimes, demand, demTimes] = args
@@ -195,7 +195,7 @@ def getAzimuthElevationDataForEvent(
         demandInterp = np.interp(valTimes, demTimes + deltaT, demand)
         error = (values - demandInterp) * 3600
         value = abs(np.median(error))
-        return value
+        return float(value)
 
     azimuthData = getEfdData(
         client,

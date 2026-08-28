@@ -43,8 +43,9 @@ __all__ = [
     "DriftResult",
 ]
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import astropy.units as u
 import numpy as np
@@ -53,7 +54,7 @@ from astropy.time import Time
 
 from lsst.afw import cameraGeom
 from lsst.afw.cameraGeom import Detector
-from lsst.afw.image import ImageF
+from lsst.afw.image import ImageF, VisitInfo
 
 # at top-level imports
 from lsst.daf.base import PropertyList
@@ -470,7 +471,15 @@ def pixelToFocal(pixelX: np.ndarray, pixelY: np.ndarray, det: Detector) -> tuple
     return focalX.ravel(), focalY.ravel()
 
 
-def stampToCcd(stamp, ccdimg, detector, camera, ampName, ampCol, ampRow):
+def stampToCcd(
+    stamp: np.ndarray,
+    ccdimg: np.ndarray,
+    detector: Detector,
+    camera: cameraGeom.Camera,
+    ampName: str,
+    ampCol: int,
+    ampRow: int,
+) -> np.ndarray:
     """
     Place ROI (stamp) into an existing full CCD array, all in CCD view.
 
@@ -769,7 +778,7 @@ def convertCcdToDvcs(
     return xdvcs, ydvcs
 
 
-def getCamRotAngle(visitinfo) -> float:
+def getCamRotAngle(visitinfo: VisitInfo) -> float:
     """
     Compute the camera rotation angle in degrees from visit information.
 
@@ -794,7 +803,7 @@ def getCamRotAngle(visitinfo) -> float:
 # Putting former guiderwcs here
 
 
-def makeInitGuiderWcs(camera, visitInfo) -> dict[str, SkyWcs]:
+def makeInitGuiderWcs(camera: cameraGeom.Camera, visitInfo: VisitInfo) -> dict[str, SkyWcs]:
     """
     Create initial WCS for each guider detector in the camera.
 
@@ -869,22 +878,25 @@ class DriftResult:
     el_start: float
     pixel_offset: tuple[float, float]
 
-    def __str__(self, expid=""):
+    def __str__(self, expid: int | None = None) -> str:
         """
         Return a formatted string summarizing the drift results.
 
         Parameters
         ----------
-        expid : str, optional
-            Exposure identifier to include in the summary (default is "").
+        expid : int, optional
+            Exposure identifier to include in the summary. Defaults to None,
+            which leaves the field blank, as it does when Python calls this
+            implicitly via print() or str().
 
         Returns
         -------
         str
             Formatted summary string.
         """
+        expidStr = "" if expid is None else str(expid)
         s = (
-            f"Exposure summary: {expid}\n"
+            f"Exposure summary: {expidStr}\n"
             f"Telescope pointing (RA, Dec): ({self.ra_point:.6f}, {self.dec_point:.6f})\n"
             f"Actual pointing   (RA, Dec) : ({self.ra_real:.6f}, {self.dec_real:.6f})\n"
             f"Pointing error (RA, Dec).   : ({self.delta_ra_arcsec:.1f},"
@@ -899,19 +911,28 @@ class DriftResult:
         )
         return s
 
-    def summary(self, expid=""):
+    def summary(self, expid: int | None = None) -> None:
         """
         Print a summary of the drift results.
 
         Parameters
         ----------
-        expid : str, optional
-            Exposure identifier to include in the summary (default is "").
+        expid : int, optional
+            Exposure identifier to include in the summary. Defaults to None,
+            which leaves the field blank.
         """
         print(self.__str__(expid))
 
 
-def getObsAltAz(ra, dec, pressure, hum, temperature, wl, time):
+def getObsAltAz(
+    ra: float,
+    dec: float,
+    pressure: u.Quantity,
+    hum: float,
+    temperature: u.Quantity,
+    wl: u.Quantity,
+    time: Time,
+) -> SkyCoord:
     """
     Compute the observed AltAz coordinates for given RA/Dec and conditions.
 
@@ -934,7 +955,7 @@ def getObsAltAz(ra, dec, pressure, hum, temperature, wl, time):
 
     Returns
     -------
-    astropy.coordinates.AltAz
+    astropy.coordinates.SkyCoord
         Altitude and azimuth coordinates of the object.
     """
     skyLocation = SkyCoord(ra * u.deg, dec * u.deg)
@@ -950,7 +971,16 @@ def getObsAltAz(ra, dec, pressure, hum, temperature, wl, time):
     return obsAltAz1
 
 
-def DeltaAltAz(ra, dec, pressure, hum, temperature, wl, time1, time2):
+def DeltaAltAz(
+    ra: float,
+    dec: float,
+    pressure: u.Quantity,
+    hum: float,
+    temperature: u.Quantity,
+    wl: u.Quantity,
+    time1: Time,
+    time2: Time,
+) -> list[float]:
     """
     Calculate the change in AltAz coordinates between two times.
 
@@ -995,7 +1025,7 @@ def DeltaAltAz(ra, dec, pressure, hum, temperature, wl, time1, time2):
     return [azChange, elChange]
 
 
-def computePointModelDrift(metadata, cWcs: SkyWcs, rWcs: SkyWcs) -> DriftResult:
+def computePointModelDrift(metadata: Mapping[str, Any], cWcs: SkyWcs, rWcs: SkyWcs) -> DriftResult:
     """
     Calculate Point Model drift from exposure metadata and
     the measured `calexp` WCS.

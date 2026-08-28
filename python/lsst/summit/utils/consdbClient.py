@@ -89,7 +89,7 @@ def _check_status(r: requests.Response) -> None:
         raise e
 
 
-def clean_url(resp: requests.Response, *args, **kwargs) -> requests.Response:
+def clean_url(resp: requests.Response, *args: Any, **kwargs: Any) -> requests.Response:
     """Parse url from response and remove netloc portion.
 
     Set new url in response and return response
@@ -458,7 +458,7 @@ class ConsDbClient:
         values: dict[str, Any] | None = None,
         *,
         allow_update: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> requests.Response:
         """Set flexible metadata values for an observation.
 
@@ -518,7 +518,7 @@ class ConsDbClient:
         values: Mapping[str, Any],
         *,
         allow_update: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> requests.Response:
         """Insert values into a single ConsDB fixed metadata table.
 
@@ -605,7 +605,7 @@ class ConsDbClient:
         table: str,
         obs_dict: dict[int, dict[str, Any]],
         *,
-        allow_update=False,
+        allow_update: bool = False,
     ) -> requests.Response:
         """Insert values into a single ConsDB fixed metadata table.
 
