@@ -1,0 +1,6 @@
+# Installed by the "Run mypy" workflow only; runtime deps live in
+# requirements.txt. Without the requests stubs, mypy.ini's per-module
+# ignore_missing_imports silently degrades every requests object to Any.
+pytest
+responses
+types-requests
