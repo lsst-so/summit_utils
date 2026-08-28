@@ -78,7 +78,9 @@ def _check_status(r: requests.Response) -> None:
         r.raise_for_status()
     except requests.HTTPError as e:
         try:
-            json_data = e.response.json()
+            # Use ``r`` rather than ``e.response``: raise_for_status always
+            # attaches this response, but its type is Response | None.
+            json_data = r.json()
             e.add_note(str(json_data))
             if "message" in json_data:
                 e.add_note(f"\n\n{json_data['message']}")
