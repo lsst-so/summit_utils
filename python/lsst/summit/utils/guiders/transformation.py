@@ -878,25 +878,19 @@ class DriftResult:
     el_start: float
     pixel_offset: tuple[float, float]
 
-    def __str__(self, expid: int | None = None) -> str:
+    def __str__(self) -> str:
         """
         Return a formatted string summarizing the drift results.
 
-        Parameters
-        ----------
-        expid : int, optional
-            Exposure identifier to include in the summary. Defaults to None,
-            which leaves the field blank, as it does when Python calls this
-            implicitly via print() or str().
+        The exposure id is not included: a DriftResult does not carry one.
+        Use `summary` to print the results under an exposure id header.
 
         Returns
         -------
         str
             Formatted summary string.
         """
-        expidStr = "" if expid is None else str(expid)
         s = (
-            f"Exposure summary: {expidStr}\n"
             f"Telescope pointing (RA, Dec): ({self.ra_point:.6f}, {self.dec_point:.6f})\n"
             f"Actual pointing   (RA, Dec) : ({self.ra_real:.6f}, {self.dec_real:.6f})\n"
             f"Pointing error (RA, Dec).   : ({self.delta_ra_arcsec:.1f},"
@@ -911,17 +905,17 @@ class DriftResult:
         )
         return s
 
-    def summary(self, expid: int | None = None) -> None:
+    def summary(self, expid: int) -> None:
         """
-        Print a summary of the drift results.
+        Print a summary of the drift results under an exposure id header.
 
         Parameters
         ----------
-        expid : int, optional
-            Exposure identifier to include in the summary. Defaults to None,
-            which leaves the field blank.
+        expid : int
+            Exposure identifier to head the summary with.
         """
-        print(self.__str__(expid))
+        print(f"Exposure summary: {expid}")
+        print(self)
 
 
 def getObsAltAz(
