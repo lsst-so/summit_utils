@@ -29,7 +29,13 @@ from astropy.stats import mad_std
 
 from lsst.summit.utils.utils import RobustFitResult, RobustFitter
 
-__all__ = ["GuiderMetricsBuilder"]
+# Default RANSAC inlier band for the guider trend fits: residualScale x
+# mad_std(residuals about a first-pass line). Tunable (GuiderMetricsBuilder /
+# GuiderPlotter.stripPlot residualScale) -- raise it to keep more real,
+# turbulence-driven scatter in heavy-tailed centroid/shape series.
+DEFAULT_RESIDUAL_SCALE = 5.0
+
+__all__ = ["GuiderMetricsBuilder", "DEFAULT_RESIDUAL_SCALE"]
 
 
 class GuiderMetricsBuilder:
@@ -51,10 +57,19 @@ class GuiderMetricsBuilder:
         ``dtheta``, ``magoffset``, ``fwhm``).
     """
 
-    def __init__(self, starCatalog: pd.DataFrame, nMissingStamps: int) -> None:
+    def __init__(
+        self,
+        starCatalog: pd.DataFrame,
+        nMissingStamps: int,
+        residualScale: float = DEFAULT_RESIDUAL_SCALE,
+    ) -> None:
         self.starCatalog = starCatalog
         self.log = logging.getLogger(__name__)
         self.nMissingStamps = nMissingStamps
+        # RANSAC inlier band = residualScale x mad_std(residuals) for the trend
+        # fits. Larger keeps more stamps; tune per dataset (turbulence-heavy
+        # series have heavy tails that a tight band over-rejects).
+        self.residualScale = residualScale
 
         # Store the basic variable names for metrics
         self.baseVarsCols = {
@@ -99,11 +114,12 @@ class GuiderMetricsBuilder:
 
         # build metrics
         self.countsDf = computeExposureCounts(stars, self.nMissingStamps, expid)
-        self.altDriftData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "dalt", expid)
-        self.azDriftData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "daz", expid)
-        self.rotatorData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "dtheta", expid)
-        self.magData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "magoffset", expid)
-        self.psfData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "fwhm", expid)
+        rs = self.residualScale
+        self.altDriftData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "dalt", expid, rs)
+        self.azDriftData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "daz", expid, rs)
+        self.rotatorData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "dtheta", expid, rs)
+        self.magData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "magoffset", expid, rs)
+        self.psfData: GuiderDriftResult = computeTrendMetrics(stars, "elapsed_time", "fwhm", expid, rs)
 
         # Set the built state to true
         self.isBuilt = True
@@ -234,6 +250,7 @@ def computeTrendMetrics(
     timeCol: str,
     yCol: str,
     expid: int,
+    residualScale: float = DEFAULT_RESIDUAL_SCALE,
 ) -> GuiderDriftResult:
     """
     Compute robust linear trend metrics for a given measurement column versus
@@ -298,7 +315,7 @@ def computeTrendMetrics(
 
     # 5-sigma inlier band on the residual scatter (not the raw, trend-inflated
     # spread); the old default (1.5 x MAD of raw y) rejected too many points.
-    fitter = RobustFitter(residualScale=5.0, residualFromFit=True)
+    fitter = RobustFitter(residualScale=residualScale, residualFromFit=True)
     fit_res = fitter.fit(x, y)
 
     return GuiderDriftResult(

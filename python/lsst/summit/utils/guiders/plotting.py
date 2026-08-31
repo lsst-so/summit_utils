@@ -37,6 +37,8 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 
 from lsst.summit.utils.utils import RobustFitter
+
+from .metrics import DEFAULT_RESIDUAL_SCALE
 from lsst.utils.plotting.figures import make_figure
 
 if TYPE_CHECKING:
@@ -317,7 +319,8 @@ class GuiderPlotter:
         return fig, axs
 
     def stripPlot(
-        self, plotType: str = "centroidAltAz", saveAs: str | None = None, coveragePct: int = 68
+        self, plotType: str = "centroidAltAz", saveAs: str | None = None, coveragePct: int = 68,
+        residualScale: float = DEFAULT_RESIDUAL_SCALE,
     ) -> plt.Figure:
         """
         Plot time-series strip plot for a chosen metric.
@@ -389,7 +392,7 @@ class GuiderPlotter:
             _zero(ax, c)
             # 5-sigma inlier band on the residual scatter (not the raw,
             # trend-inflated spread); the old default rejected too many points.
-            fitter = RobustFitter(residualScale=5.0, residualFromFit=True)
+            fitter = RobustFitter(residualScale=residualScale, residualFromFit=True)
             res = fitter.fit(x=np.asarray(df["elapsed_time"].values), y=(df[c].values * scale))
             txt = (
                 f"Slope: {expTime * res.slope:.2f} {unit}/exposure\n"
