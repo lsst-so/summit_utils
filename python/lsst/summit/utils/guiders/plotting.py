@@ -223,6 +223,10 @@ class MosaicLayout:
     radius: float = 0.125
     pairDist: float = 0.243
     pairGap: float = 0.011  # perpendicular gap added beyond tangency (circle separation)
+    # Panel half-size for the full-frame (non-zoom) view. Smaller than ``radius``
+    # so a corner pair's square cutouts sit diagonally adjacent without overlap
+    # (pair centers are 2*(radius/sqrt2+pairGap) ~ 0.199 apart per axis).
+    fullFrameHalf: float = 0.09
     # Where each detector's name sits, all OUTSIDE the 2" circle: 'ot' = above
     # the circle (default). The top pair reaches the figure top, so those label
     # to the side instead ('l'/'r').
@@ -251,7 +255,7 @@ class MosaicLayout:
         }
 
     def build(
-        self, *, figsize: tuple[float, float] = (12, 12), **_: Any
+        self, *, figsize: tuple[float, float] = (12, 12), fullFrame: bool = False, **_: Any
     ) -> tuple[plt.Figure, dict[str, plt.Axes]]:
         """Build the Agg-backed figure with explicitly placed panel axes.
 
@@ -260,6 +264,10 @@ class MosaicLayout:
         figsize : `tuple[float, float]`, optional
             Figure size in inches (width, height); keep it square so the circles
             render round.
+        fullFrame : `bool`, optional
+            If True, size the detector panels as ``fullFrameHalf`` squares (for
+            the non-zoom full-frame view, so a corner pair does not overlap);
+            otherwise use ``radius`` (so the 2" circles render at full size).
 
         Returns
         -------
@@ -269,7 +277,7 @@ class MosaicLayout:
             Mapping from panel label (guider names + 'center', 'arrow') to axes.
         """
         fig = make_figure(figsize=figsize, constrained_layout=False)
-        r = self.radius
+        r = self.fullFrameHalf if fullFrame else self.radius
         axs: dict[str, plt.Axes] = {}
         for name, (x, y) in self.positions.items():
             axs[name] = fig.add_axes((x - r, y - r, 2 * r, 2 * r))
@@ -303,7 +311,9 @@ class GuiderPlotter:
         sns.set_style("white")
         sns.set_context("talk", font_scale=0.8)
 
-    def setupFigure(self, figsize: tuple[float, float] = (12, 12)) -> tuple[plt.Figure, dict[str, plt.Axes]]:
+    def setupFigure(
+        self, figsize: tuple[float, float] = (12, 12), fullFrame: bool = False
+    ) -> tuple[plt.Figure, dict[str, plt.Axes]]:
         """
         Create a figure and axes using the guider mosaic layout.
 
@@ -311,6 +321,9 @@ class GuiderPlotter:
         ----------
         figsize : `tuple[float, float]`, optional
             Figure size in inches (width, height).
+        fullFrame : `bool`, optional
+            Size the detector panels for the full-frame (non-zoom) view; passed
+            through to `MosaicLayout.build`.
 
         Returns
         -------
@@ -319,7 +332,7 @@ class GuiderPlotter:
         axs : `dict[str, matplotlib.axes.Axes]`
             Mapping of panel name to axes.
         """
-        fig, axs = self.layout.build(figsize=figsize)
+        fig, axs = self.layout.build(figsize=figsize, fullFrame=fullFrame)
         return fig, axs
 
     def stripPlot(
@@ -473,7 +486,7 @@ class GuiderPlotter:
         Wraps the plotting logic for static and animated frames.
         """
         if fig is None or axs is None:
-            fig, axs = self.setupFigure(figsize=(9, 9))
+            fig, axs = self.setupFigure(figsize=(9, 9), fullFrame=(cutoutSize < 0))
 
         if not self.withStars and cutoutSize > 0:
             self.log.warning("No stars data available. Using full frame.")
@@ -611,7 +624,7 @@ class GuiderPlotter:
         fig : `matplotlib.figure.Figure`
             The resulting figure.
         """
-        fig, axs = self.setupFigure(figsize=figsize)
+        fig, axs = self.setupFigure(figsize=figsize, fullFrame=(cutoutSize < 0))
         self._starMosaic(
             stampNum=stampNum,
             fig=fig,
@@ -662,7 +675,7 @@ class GuiderPlotter:
             The created animation object.
         """
         # build canvas
-        fig, axs = self.setupFigure(figsize=figsize)
+        fig, axs = self.setupFigure(figsize=figsize, fullFrame=(cutoutSize < 0))
 
         # number of frames
         total = len(self.guiderData)
