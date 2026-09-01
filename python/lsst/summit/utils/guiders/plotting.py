@@ -208,18 +208,21 @@ class MosaicLayout:
 
     Each corner raft's two SG panels sit together in that raft's focal-plane
     corner (R00 lower-left, R04 lower-right, R40 upper-left, R44 upper-right),
-    with their 2" circles tangent at a point on the diagonal (45/135/225/315
-    deg). The arrangement is symmetric under x->-x and y->-y, as the focal plane
-    is. SG0/SG1 within a corner keep their physical relative orientation.
+    with their 2" circles near a point on the diagonal (45/135/225/315 deg). The
+    arrangement is symmetric under x->-x and y->-y, as the focal plane is.
+    SG0/SG1 within a corner keep their physical relative orientation.
 
     Positions are figure fractions; ``radius`` is the panel half-size (= the 2"
     circle radius) and ``pairDist`` the diagonal distance from center to each
-    pair's tangent point. Panels are ``2*radius`` squares so the inscribed
-    circles of a pair (centers 2*radius apart) touch exactly.
+    pair's anchor. ``pairGap`` opens the pair beyond tangency (the perpendicular
+    offset is ``radius/sqrt(2) + pairGap``) so a corner's two circles do not
+    touch, and ``radius``/``pairDist`` are set so the outer circles leave a
+    margin to the figure edge. Panels are ``2*radius`` squares.
     """
 
-    radius: float = 0.135
-    pairDist: float = 0.27
+    radius: float = 0.125
+    pairDist: float = 0.243
+    pairGap: float = 0.011  # perpendicular gap added beyond tangency (circle separation)
     # Where each detector's name sits, all OUTSIDE the 2" circle: 'ot' = above
     # the circle (default). The top pair reaches the figure top, so those label
     # to the side instead ('l'/'r').
@@ -235,15 +238,15 @@ class MosaicLayout:
     def positions(self) -> dict[str, tuple[float, float]]:
         """Center (figure-fraction x, y) of each guider panel."""
         r, p, cx, cy = self.radius, self.pairDist, 0.5, 0.5
-        rr = r / np.sqrt(2)  # perpendicular offset so the pair touches on the diagonal
+        rr = r / np.sqrt(2) + self.pairGap  # perpendicular offset; > tangency opens the pair
         return {
-            # top-right (R44), tangent at (+p,+p)
+            # top-right (R44), anchor at (+p,+p)
             "R44_SG0": (cx + p - rr, cy + p + rr), "R44_SG1": (cx + p + rr, cy + p - rr),
-            # top-left (R40), tangent at (-p,+p)
+            # top-left (R40), anchor at (-p,+p)
             "R40_SG1": (cx - p + rr, cy + p + rr), "R40_SG0": (cx - p - rr, cy + p - rr),
-            # bottom-left (R00), tangent at (-p,-p)
+            # bottom-left (R00), anchor at (-p,-p)
             "R00_SG1": (cx - p - rr, cy - p + rr), "R00_SG0": (cx - p + rr, cy - p - rr),
-            # bottom-right (R04), tangent at (+p,-p)
+            # bottom-right (R04), anchor at (+p,-p)
             "R04_SG0": (cx + p + rr, cy - p + rr), "R04_SG1": (cx + p - rr, cy - p - rr),
         }
 
@@ -794,6 +797,12 @@ def drawArrows(
     ax.set_axis_off()
 
 
+# Greys colormap that renders NaN (outside-circle) pixels transparent, so the
+# zoomed panels show only the content inside the 2" circle and never overlap.
+_GREYS_NAN = plt.get_cmap("Greys").copy()
+_GREYS_NAN.set_bad(alpha=0.0)
+
+
 def renderStampPanel(
     ax: plt.Axes,
     guiderData: GuiderData,
@@ -804,6 +813,7 @@ def renderStampPanel(
     cutoutSize: int = -1,
     plo: float = 50.0,
     phi: float = 99.0,
+    maskRadius: float = 10.0,
 ) -> plt.AxesImage:
     """
     Render a single detector stamp with zoom around viewCenter.
@@ -847,7 +857,15 @@ def renderStampPanel(
         y0, y1 = 0, h
         x0, x1 = 0, w
 
-    region = img[y0:y1, x0:x1]
+    region = img[y0:y1, x0:x1].astype(float)
+    # For the zoomed view, keep only pixels inside the 2" circle (maskRadius px
+    # about viewCenter); the rest become NaN and render transparent, so a pair's
+    # square cutouts no longer overlap -- only the circular content shows.
+    masked = cutoutSize > 0 and maskRadius > 0
+    if masked:
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        region = np.where(np.hypot(xx - viewCenter[0], yy - viewCenter[1]) <= maskRadius,
+                          region, np.nan)
     vmin, vmax = np.nanpercentile(region, [plo, phi])
     # Offset the extent by -0.5 so integer (0-based) pixel coordinates fall at
     # pixel CENTERS. This aligns the star-centroid marker (drawn at xroi, yroi)
@@ -858,7 +876,7 @@ def renderStampPanel(
     im = ax.imshow(
         region,
         origin="lower",
-        cmap="Greys",
+        cmap=_GREYS_NAN if masked else "Greys",
         vmin=vmin,
         vmax=vmax,
         interpolation="nearest",
