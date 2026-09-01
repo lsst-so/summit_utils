@@ -321,7 +321,7 @@ class GuiderPlotter:
 
     def stripPlot(
         self, plotType: str = "centroidAltAz", saveAs: str | None = None, coveragePct: int = 68,
-        residualScale: float = DEFAULT_RESIDUAL_SCALE, smoothFwhmSec: float = 1.0,
+        residualScale: float = DEFAULT_RESIDUAL_SCALE, smoothFwhmSec: float = 1.6,
     ) -> plt.Figure:
         """
         Plot time-series strip plot for a chosen metric.
