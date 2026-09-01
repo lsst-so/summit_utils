@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -320,7 +321,7 @@ class GuiderPlotter:
 
     def stripPlot(
         self, plotType: str = "centroidAltAz", saveAs: str | None = None, coveragePct: int = 68,
-        residualScale: float = DEFAULT_RESIDUAL_SCALE,
+        residualScale: float = DEFAULT_RESIDUAL_SCALE, smoothFwhmSec: float = 1.0,
     ) -> plt.Figure:
         """
         Plot time-series strip plot for a chosen metric.
@@ -426,6 +427,20 @@ class GuiderPlotter:
                 ax.scatter(
                     df.loc[out, "elapsed_time"], df.loc[out, c] * scale, color=LIGHT_BLUE, alpha=0.2, marker=m
                 )
+                # Gaussian slow-curve overlay for the centroid-motion series: the
+                # per-stamp scatter is turbulence; this shows the motion above the
+                # smoothing timescale (default 1 s FWHM).
+                if smoothFwhmSec and c in ("dalt", "daz", "dx", "dy"):
+                    sd = df.loc[msk].sort_values("elapsed_time")
+                    tt = sd["elapsed_time"].to_numpy(dtype=float)
+                    yy = sd[c].to_numpy(dtype=float) * scale
+                    ok = np.isfinite(tt) & np.isfinite(yy)
+                    if ok.sum() > 5:
+                        dt = np.nanmedian(np.diff(tt[ok]))
+                        if dt > 0:
+                            sig = (smoothFwhmSec / 2.3548) / dt      # FWHM sec -> sigma in samples
+                            ax.plot(tt[ok], gaussian_filter1d(yy[ok], sig, mode="reflect"),
+                                    color=plt.cm.tab10(j % 10), lw=2.0)
 
             if i == 0:
                 ax.set_ylabel(cfg["ylabel"])
