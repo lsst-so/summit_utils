@@ -212,21 +212,25 @@ class MosaicLayout:
     arrangement is symmetric under x->-x and y->-y, as the focal plane is.
     SG0/SG1 within a corner keep their physical relative orientation.
 
-    Positions are figure fractions; ``radius`` is the panel half-size (= the 2"
-    circle radius) and ``pairDist`` the diagonal distance from center to each
-    pair's anchor. ``pairGap`` opens the pair beyond tangency (the perpendicular
-    offset is ``radius/sqrt(2) + pairGap``) so a corner's two circles do not
-    touch, and ``radius``/``pairDist`` are set so the outer circles leave a
-    margin to the figure edge. Panels are ``2*radius`` squares.
+    Positions are figure fractions. The zoomed (star) and full-frame views use
+    separate geometry so each looks right:
+
+    * Zoomed: ``radius`` is the panel half-size (= the 2" circle radius),
+      ``pairDist`` the diagonal center-to-anchor distance, and ``pairGap`` opens
+      the pair beyond tangency (perpendicular offset ``radius/sqrt(2) + pairGap``)
+      so a corner's two circles sit close but do not touch.
+    * Full-frame: ``fullFrameHalf`` is the square half-size and ``fullPairDist``
+      the anchor distance; the perpendicular offset equals ``fullFrameHalf`` so a
+      corner pair's boxes meet corner-to-corner (touching, no overlap).
     """
 
-    radius: float = 0.125
-    pairDist: float = 0.243
-    pairGap: float = 0.011  # perpendicular gap added beyond tangency (circle separation)
-    # Panel half-size for the full-frame (non-zoom) view. Smaller than ``radius``
-    # so a corner pair's square cutouts sit diagonally adjacent without overlap
-    # (pair centers are 2*(radius/sqrt2+pairGap) ~ 0.199 apart per axis).
-    fullFrameHalf: float = 0.09
+    # zoomed (star) view: 2" circles
+    radius: float = 0.13
+    pairDist: float = 0.25
+    pairGap: float = 0.004  # perpendicular gap beyond tangency (small circle separation)
+    # full-frame view: square cutouts, sized so a corner pair's boxes touch
+    fullFrameHalf: float = 0.105
+    fullPairDist: float = 0.25
     # Where each detector's name sits, all OUTSIDE the 2" circle: 'ot' = above
     # the circle (default). The top pair reaches the figure top, so those label
     # to the side instead ('l'/'r').
@@ -238,11 +242,11 @@ class MosaicLayout:
         }
     )
 
-    @property
-    def positions(self) -> dict[str, tuple[float, float]]:
-        """Center (figure-fraction x, y) of each guider panel."""
-        r, p, cx, cy = self.radius, self.pairDist, 0.5, 0.5
-        rr = r / np.sqrt(2) + self.pairGap  # perpendicular offset; > tangency opens the pair
+    @staticmethod
+    def _positions(p: float, rr: float) -> dict[str, tuple[float, float]]:
+        """Panel centers (figure-fraction x, y) for anchor distance ``p`` and
+        perpendicular pair offset ``rr``."""
+        cx, cy = 0.5, 0.5
         return {
             # top-right (R44), anchor at (+p,+p)
             "R44_SG0": (cx + p - rr, cy + p + rr), "R44_SG1": (cx + p + rr, cy + p - rr),
@@ -253,6 +257,16 @@ class MosaicLayout:
             # bottom-right (R04), anchor at (+p,-p)
             "R04_SG0": (cx + p + rr, cy - p + rr), "R04_SG1": (cx + p - rr, cy - p - rr),
         }
+
+    @property
+    def positions(self) -> dict[str, tuple[float, float]]:
+        """Center of each guider panel for the zoomed (star) view."""
+        return self._positions(self.pairDist, self.radius / np.sqrt(2) + self.pairGap)
+
+    @property
+    def positionsFull(self) -> dict[str, tuple[float, float]]:
+        """Center of each guider panel for the full-frame view (boxes touch)."""
+        return self._positions(self.fullPairDist, self.fullFrameHalf)
 
     def build(
         self, *, figsize: tuple[float, float] = (12, 12), fullFrame: bool = False, **_: Any
@@ -278,8 +292,9 @@ class MosaicLayout:
         """
         fig = make_figure(figsize=figsize, constrained_layout=False)
         r = self.fullFrameHalf if fullFrame else self.radius
+        positions = self.positionsFull if fullFrame else self.positions
         axs: dict[str, plt.Axes] = {}
-        for name, (x, y) in self.positions.items():
+        for name, (x, y) in positions.items():
             axs[name] = fig.add_axes((x - r, y - r, 2 * r, 2 * r))
         # exposure metadata (center) with the Alt/Az arrow directly beneath it
         axs["center"] = fig.add_axes((0.34, 0.45, 0.32, 0.14))
