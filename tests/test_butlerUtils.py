@@ -24,11 +24,12 @@ import datetime
 import os
 import random
 import unittest
-from typing import Iterable
+from typing import Any, Iterable
 
 import lsst.daf.butler as dafButler
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef
+from lsst.daf.butler import DatasetRef, DimensionRecord
+from lsst.daf.butler.direct_butler import DirectButler
 from lsst.resources import ResourcePath
 from lsst.summit.utils.butlerUtils import removeDataProduct  # noqa: F401
 from lsst.summit.utils.butlerUtils import (
@@ -67,7 +68,7 @@ from lsst.summit.utils.butlerUtils import (
 class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
     """A test case for testing sky position offsets for exposures."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         # this also functions as test_makeDefaultLatissButler(), but we may as
         # well catch the butler once it's made so it can be reused if needed,
         # given how hard it is to made it robustly
@@ -76,10 +77,13 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         try:
             if getSite() == "jenkins":
                 raise unittest.SkipTest("Skip running butler-driven tests in Jenkins.")
-            self.butler = makeDefaultLatissButler()
+            butler = makeDefaultLatissButler()
         except FileNotFoundError:
             raise unittest.SkipTest("Skipping tests that require the LATISS butler repo.")
-        self.assertIsInstance(self.butler, dafButler.Butler)
+        # fillDataId() and getLatissOnSkyDataIds() use DirectButler-only APIs,
+        # so pin the concrete type rather than fail deep inside them.
+        assert isinstance(butler, DirectButler)
+        self.butler = butler
 
         # dict-like dataIds
         self.rawDataId = getMostRecentDataId(self.butler)
@@ -114,13 +118,13 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.dataCoordMinimal = self.butler.registry.expandDataId(self.rawDataIdNoDayObSeqNum, detector=0)
         self.assertIsInstance(self.dataCoordMinimal, dafButler.DataCoordinate)
 
-    def test_getLatissDefaultCollections(self):
+    def test_getLatissDefaultCollections(self) -> None:
         defaultCollections = getLatissDefaultCollections()
         self.assertTrue(defaultCollections is not None)
         self.assertTrue(defaultCollections != [])
         self.assertTrue(len(defaultCollections) >= 1)
 
-    def test_RECENT_DAY(self):
+    def test_RECENT_DAY(self) -> None:
         todayInt = int(datetime.date.today().strftime("%Y%m%d"))
         self.assertTrue(RECENT_DAY <= todayInt)  # in the past
         self.assertTrue(RECENT_DAY >= 20200101)  # not too far in the past
@@ -139,17 +143,17 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
                 "You might want to consider updating this to speed up butler queries."
             )
 
-    def test_sanitizeDayObs(self):
-        dayObs = "2020-01-02"
+    def test_sanitizeDayObs(self) -> None:
+        dayObs: str | int = "2020-01-02"
         self.assertEqual(sanitizeDayObs(dayObs), 20200102)
         dayObs = 20210201
         self.assertEqual(sanitizeDayObs(dayObs), dayObs)
 
         with self.assertRaises(ValueError):
-            sanitizeDayObs(1.234)
+            sanitizeDayObs(1.234)  # type: ignore[arg-type]
             sanitizeDayObs("Febuary 29th, 1970")
 
-    def test_getMostRecentDayObs(self):
+    def test_getMostRecentDayObs(self) -> None:
         # just a basic sanity check here as we can't know the value,
         # but at least check something is returned, and is plausible
         recentDay = getMostRecentDayObs(self.butler)
@@ -159,7 +163,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         # the year wouldd be 2XXX+1000, so set to y4k just in case
         self.assertTrue(recentDay < 40000000)
 
-    def test_getSeqNumsForDayObs(self):
+    def test_getSeqNumsForDayObs(self) -> None:
         emptyDay = 19990101
         seqnums = getSeqNumsForDayObs(self.butler, emptyDay)
         self.assertIsInstance(seqnums, Iterable)
@@ -170,7 +174,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertIsInstance(seqnums, Iterable)
         self.assertTrue(len(list(seqnums)) >= 1)
 
-    def test_getMostRecentDataId(self):
+    def test_getMostRecentDataId(self) -> None:
         # we can't know the values, but it should always return something
         # and the dict and int forms should always have certain keys and agree
         dataId = getMostRecentDataId(self.butler)
@@ -179,7 +183,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertIn("seq_num", dataId)
         self.assertTrue("exposure" in dataId or "exposure.id" in dataId)
 
-    def test_getDatasetRefForDataId(self):
+    def test_getDatasetRefForDataId(self) -> None:
         dRef = getDatasetRefForDataId(self.butler, "raw", self.rawDataId)
         self.assertIsInstance(dRef, DatasetRef)
 
@@ -188,7 +192,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         dRef = getDatasetRefForDataId(self.butler, "raw", self.dataCoordMinimal)
         self.assertIsInstance(dRef, DatasetRef)
 
-    def test__dayobs_present(self):
+    def test__dayobs_present(self) -> None:
         goods = [{"day_obs": 123}, {"exposure.day_obs": 234}, {"day_obs": 345, "otherkey": -1}]
         bads = [{"different_key": 123}]
         for good in goods:
@@ -196,7 +200,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertFalse(_dayobs_present(bad))
 
-    def test__seqnum_present(self):
+    def test__seqnum_present(self) -> None:
         goods = [{"seq_num": 123}, {"exposure.seq_num": 234}, {"seq_num": 345, "otherkey": -1}]
         bads = [{"different_key": 123}]
         for good in goods:
@@ -204,7 +208,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertFalse(_seqnum_present(bad))
 
-    def test__expid_present(self):
+    def test__expid_present(self) -> None:
         goods = [{"exposure": 123}, {"exposure.id": 234}, {"exposure.id": 345, "otherkey": -1}]
         bads = [{"different_key": 123}]
         for good in goods:
@@ -212,7 +216,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertFalse(_expid_present(bad))
 
-    def test_getDayObs(self):
+    def test_getDayObs(self) -> None:
         dayVal = 98765
         goods = [{"day_obs": dayVal}, {"exposure.day_obs": dayVal}, {"day_obs": dayVal, "otherkey": -1}]
         bads = [{"different_key": 123}]
@@ -221,7 +225,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertTrue(getDayObs(bad) is None)
 
-    def test_getSeqNum(self):
+    def test_getSeqNum(self) -> None:
         seqVal = 12345
         goods = [{"seq_num": seqVal}, {"exposure.seq_num": seqVal}, {"seq_num": seqVal, "otherkey": -1}]
         bads = [{"different_key": 123}]
@@ -230,7 +234,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertTrue(getSeqNum(bad) is None)
 
-    def test_getExpId(self):
+    def test_getExpId(self) -> None:
         expIdVal = 12345
         goods = [{"exposure": expIdVal}, {"exposure.id": expIdVal}, {"exposure": expIdVal, "otherkey": -1}]
         bads = [{"different_key": 123}]
@@ -239,18 +243,18 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         for bad in bads:
             self.assertTrue(getExpId(bad) is None)
 
-    def test_datasetExists(self):
+    def test_datasetExists(self) -> None:
         self.assertTrue(self.butler.exists("raw", self.rawDataId))
         self.assertTrue(self.butler.exists("raw", self.expIdOnly))
         self.assertTrue(self.butler.exists("raw", self.dayObsSeqNumIdOnly))
         return
 
-    def test_sortRecordsByDayObsThenSeqNum(self):
+    def test_sortRecordsByDayObsThenSeqNum(self) -> None:
         where = "exposure.day_obs=dayObs"
-        expRecords = self.butler.registry.queryDimensionRecords(
+        recordResults = self.butler.registry.queryDimensionRecords(
             "exposure", where=where, bind={"dayObs": RECENT_DAY}
         )
-        expRecords = list(expRecords)
+        expRecords = list(recordResults)
         self.assertGreaterEqual(len(expRecords), 1)  # just ensure we're not doing a no-op test
         random.shuffle(expRecords)  # they are often already in order, so make sure they're not
         sortedIds = sortRecordsByDayObsThenSeqNum(expRecords)
@@ -259,37 +263,41 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
 
         # Check that ambiguous sorts raise as expected
         with self.assertRaises(ValueError):
-            expRecords = self.butler.registry.queryDimensionRecords(
+            recordResults = self.butler.registry.queryDimensionRecords(
                 "exposure", where=where, bind={"dayObs": RECENT_DAY}
             )
-            expRecords = list(expRecords)
+            expRecords = list(recordResults)
             self.assertGreaterEqual(len(expRecords), 1)  # just ensure we're not doing a no-op test
             expRecords.append(expRecords[0])  # add a duplicate
             sortedIds = sortRecordsByDayObsThenSeqNum(expRecords)
         return
 
-    def test_getDaysWithData(self):
+    def test_getDaysWithData(self) -> None:
         days = getDaysWithData(self.butler)
         self.assertTrue(len(days) >= 0)
         self.assertIsInstance(days[0], int)
         return
 
-    def test_getExpIdFromDayObsSeqNum(self):
+    def test_getExpIdFromDayObsSeqNum(self) -> None:
         expId = getExpIdFromDayObsSeqNum(self.butler, self.dayObsSeqNumIdOnly)
         self.assertTrue(_expid_present(expId))
         return
 
-    def test_updateDataIdOrDataCord(self):
+    def test_updateDataIdOrDataCord(self) -> None:
         updateVals = {"testKey": "testValue"}
 
-        ids = [self.rawDataId, self.expRecordNoDetector, self.dataCoordMinimal]
+        ids: list[dafButler.DataId | DimensionRecord] = [
+            self.rawDataId,
+            self.expRecordNoDetector,
+            self.dataCoordMinimal,
+        ]
         for originalId in ids:
             testId = updateDataIdOrDataCord(originalId, **updateVals)
             for k, v in updateVals.items():
                 self.assertTrue(testId[k] == v)
         return
 
-    def test_fillDataId(self):
+    def test_fillDataId(self) -> None:
         self.assertFalse(_dayobs_present(self.expIdOnly))
         self.assertFalse(_seqnum_present(self.expIdOnly))
 
@@ -297,7 +305,11 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_dayobs_present(fullId))
         self.assertTrue(_seqnum_present(fullId))
 
-        ids = [self.rawDataId, self.expRecordNoDetector, self.dataCoordMinimal]
+        ids: list[dafButler.DataId | DimensionRecord] = [
+            self.rawDataId,
+            self.expRecordNoDetector,
+            self.dataCoordMinimal,
+        ]
         for dataId in ids:
             fullId = fillDataId(self.butler, dataId)
             self.assertTrue(_dayobs_present(fullId))
@@ -305,22 +317,22 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
             self.assertTrue(_expid_present(fullId))
         return
 
-    def test_getExpRecordFromDataId(self):
+    def test_getExpRecordFromDataId(self) -> None:
         record = getExpRecordFromDataId(self.butler, self.rawDataId)
         self.assertIsInstance(record, dafButler.DimensionRecord)
         return
 
-    def test_getDayObsSeqNumFromExposureId(self):
+    def test_getDayObsSeqNumFromExposureId(self) -> None:
         dayObsSeqNum = getDayObsSeqNumFromExposureId(self.butler, self.expIdOnly)
         self.assertTrue(_dayobs_present(dayObsSeqNum))
         self.assertTrue(_seqnum_present(dayObsSeqNum))
         return
 
-    def test_removeDataProduct(self):
+    def test_removeDataProduct(self) -> None:
         # Can't think of an easy or safe test for this
         return
 
-    def test_getLatissOnSkyDataIds(self):
+    def test_getLatissOnSkyDataIds(self) -> None:
         # This is very slow, consider removing as it's the least import of all
         # the util functions. However, restricting it to only the most recent
         # day does help a lot, so probably OK like that, and should speed up
@@ -345,20 +357,21 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_expid_present(testId))
         return
 
-    def test__assureDict(self):
-        for item in [
+    def test__assureDict(self) -> None:
+        items: list[dafButler.DataId | DimensionRecord] = [
             self.rawDataId,
             self.fullId,
             self.expIdOnly,
             self.expRecordNoDetector,
             self.dataCoordMinimal,
             self.rawDataIdNoDayObSeqNum,
-        ]:
+        ]
+        for item in items:
             testId = _assureDict(item)
             self.assertIsInstance(testId, dict)
         return
 
-    def test__get_dayobs_key(self):
+    def test__get_dayobs_key(self) -> None:
         dataId = {"a_random_key": 321, "exposure.day_obs": 20200312, "z_random_key": "abc"}
         self.assertTrue(_get_dayobs_key(dataId) == "exposure.day_obs")
         dataId = {"day_obs": 20200312}
@@ -367,7 +380,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_get_dayobs_key(dataId) is None)
         return
 
-    def test__get_seqnum_key(self):
+    def test__get_seqnum_key(self) -> None:
         dataId = {"a_random_key": 321, "exposure.seq_num": 123, "z_random_key": "abc"}
         self.assertTrue(_get_seqnum_key(dataId) == "exposure.seq_num")
         dataId = {"seq_num": 123}
@@ -376,7 +389,7 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_get_seqnum_key(dataId) is None)
         return
 
-    def test__get_expid_key(self):
+    def test__get_expid_key(self) -> None:
         dataId = {"a_random_key": 321, "exposure.id": 123, "z_random_key": "abc"}
         self.assertTrue(_get_expid_key(dataId) == "exposure.id")
         dataId = {"a_random_key": 321, "exposure": 123, "z_random_key": "abc"}
@@ -385,9 +398,9 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_get_expid_key(dataId) is None)
         return
 
-    def test_updateDataId(self):
+    def test_updateDataId(self) -> None:
         # check with a dataCoordinate
-        dataId = copy.copy(self.expRecordNoDetector.dataId)
+        dataId: Any = copy.copy(self.expRecordNoDetector.dataId)
         self.assertTrue("detector" not in dataId)
         dataId = updateDataId(dataId, detector=123)
         self.assertTrue("detector" in dataId)
@@ -402,10 +415,11 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue("detector" in dataId)
         self.assertEqual(dataId["detector"], 321)
 
-    def test_getExpRecord(self):
+    def test_getExpRecord(self) -> None:
         expId = self.expIdOnly["exposure"]
         dayObs = self.dayObsSeqNumIdOnly["day_obs"]
         seqNum = self.dayObsSeqNumIdOnly["seq_num"]
+        assert seqNum is not None
 
         recordByExpId = getExpRecord(self.butler, "LATISS", expId=expId)
         self.assertIsInstance(recordByExpId, dafButler.DimensionRecord)
@@ -431,29 +445,29 @@ class ButlerInitTestCase(lsst.utils.tests.TestCase):
     not possible.
     """
 
-    def test_dafButlerRaiseTypes(self):
+    def test_dafButlerRaiseTypes(self) -> None:
         # If DAF_BUTLER_REPOSITORY_INDEX is not set *at all* then
         # using an instrument label raises a FileNotFoundError
         with unittest.mock.patch.dict("os.environ"):
             if "DAF_BUTLER_REPOSITORY_INDEX" in os.environ:  # can't del unless it's already there
                 del os.environ["DAF_BUTLER_REPOSITORY_INDEX"]
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("LATISS")
+                dafButler.Butler("LATISS")  # type: ignore[abstract]
 
         # If DAF_BUTLER_REPOSITORY_INDEX is present but is just an empty
         # string then using a label raises a RuntimeError
         with unittest.mock.patch.dict(os.environ, {"DAF_BUTLER_REPOSITORY_INDEX": ""}):
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("LATISS")
+                dafButler.Butler("LATISS")  # type: ignore[abstract]
 
         # If DAF_BUTLER_REPOSITORY_INDEX _is_ set, we can't rely on any given
         # camera existing, but we can check that we get the expected error
         # when trying to init an instrument which definitely won't be defined.
         if os.getenv("DAF_BUTLER_REPOSITORY_INDEX"):
             with self.assertRaises(FileNotFoundError):
-                dafButler.Butler("NotAValidCameraName")
+                dafButler.Butler("NotAValidCameraName")  # type: ignore[abstract]
 
-    def test_makeDefaultLatissButlerRaiseTypes(self):
+    def test_makeDefaultLatissButlerRaiseTypes(self) -> None:
         """makeDefaultLatissButler unifies the mixed exception types from
         butler inits, so test all available possibilities here.
         """
@@ -474,7 +488,7 @@ class ButlerInitTestCase(lsst.utils.tests.TestCase):
             with self.assertRaises(FileNotFoundError):
                 makeDefaultLatissButler()
 
-    def test_DAF_BUTLER_REPOSITORY_INDEX_value(self):
+    def test_DAF_BUTLER_REPOSITORY_INDEX_value(self) -> None:
         # If DAF_BUTLER_REPOSITORY_INDEX is truthy then we expect it to point
         # to an actual file
         repoFile = os.getenv("DAF_BUTLER_REPOSITORY_INDEX")
@@ -486,7 +500,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

@@ -78,7 +78,9 @@ def _check_status(r: requests.Response) -> None:
         r.raise_for_status()
     except requests.HTTPError as e:
         try:
-            json_data = e.response.json()
+            # Use ``r`` rather than ``e.response``: raise_for_status always
+            # attaches this response, but its type is Response | None.
+            json_data = r.json()
             e.add_note(str(json_data))
             if "message" in json_data:
                 e.add_note(f"\n\n{json_data['message']}")
@@ -87,7 +89,7 @@ def _check_status(r: requests.Response) -> None:
         raise e
 
 
-def clean_url(resp: requests.Response, *args, **kwargs) -> requests.Response:
+def clean_url(resp: requests.Response, *args: Any, **kwargs: Any) -> requests.Response:
     """Parse url from response and remove netloc portion.
 
     Set new url in response and return response
@@ -456,7 +458,7 @@ class ConsDbClient:
         values: dict[str, Any] | None = None,
         *,
         allow_update: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> requests.Response:
         """Set flexible metadata values for an observation.
 
@@ -516,7 +518,7 @@ class ConsDbClient:
         values: Mapping[str, Any],
         *,
         allow_update: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> requests.Response:
         """Insert values into a single ConsDB fixed metadata table.
 
@@ -603,7 +605,7 @@ class ConsDbClient:
         table: str,
         obs_dict: dict[int, dict[str, Any]],
         *,
-        allow_update=False,
+        allow_update: bool = False,
     ) -> requests.Response:
         """Insert values into a single ConsDB fixed metadata table.
 

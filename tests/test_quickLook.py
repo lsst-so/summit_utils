@@ -37,7 +37,7 @@ from lsst.summit.utils.quickLook import QuickLookIsrTask, QuickLookIsrTaskConfig
 class QuickLookIsrTaskTestCase(unittest.TestCase):
     """Tests of the run method with fake data."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.mockConfig = isrMock.IsrMockLSSTConfig()
         self.camera = isrMock.IsrMockLSST(config=self.mockConfig).getCamera()
 
@@ -57,7 +57,7 @@ class QuickLookIsrTaskTestCase(unittest.TestCase):
         self.bfKernel = isrMock.BfKernelMockLSST(config=self.mockConfig).run()
         self.task = QuickLookIsrTask(config=QuickLookIsrTaskConfig())
 
-    def test_runQuickLook(self):
+    def test_runQuickLook(self) -> None:
         # Execute the run method with the mock data
         result = self.task.run(
             self.ccdExposure,
@@ -79,12 +79,12 @@ class QuickLookIsrTaskTestCase(unittest.TestCase):
             "Resulting exposure should be an instance of lsst.afw.image.Exposure",
         )
 
-    def test_runQuickLookMissingData(self):
+    def test_runQuickLookMissingData(self) -> None:
         # Test without any inputs other than the exposure.  And the PTC.
         result = self.task.run(self.ccdExposure, ptc=self.ptc)
         self.assertIsInstance(result.exposure, afwImage.Exposure)
 
-    def test_runQuickLookBadDark(self):
+    def test_runQuickLookBadDark(self) -> None:
         # Test with an incorrect dark frame
         bbox = self.ccdExposure.getBBox()
         bbox.grow(-20)
@@ -106,7 +106,7 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
     Adapted from the unit tests of ``CalibrateImageTask.runQuantum``
     """
 
-    def setUp(self):
+    def setUp(self) -> None:
         # These need to be real, not empty:
         self.mockConfig = isrMock.IsrMockLSSTConfig()
         self.camera = isrMock.IsrMockLSST(config=self.mockConfig).getCamera()
@@ -232,10 +232,10 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
             self.detector_id,
         )
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         del self.repo_path  # this removes the temporary directory
 
-    def test_runQuantum(self):
+    def test_runQuantum(self) -> None:
         config = ipIsr.IsrTaskConfig()
         # Remove some outputs
         config.doBinnedExposures = False
@@ -289,7 +289,7 @@ class QuickLookIsrTaskRunQuantumTests(lsst.utils.tests.TestCase):
             lsst.pipe.base.testUtils.runTestQuantum(task, self.butler, quantum, mockRun=False)
 
 
-def raiseExitMockError(*args):
+def raiseExitMockError(*args: object) -> None:
     """Raise a custom exception."""
     raise ExitMockError
 
@@ -304,7 +304,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

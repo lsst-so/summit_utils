@@ -29,8 +29,12 @@ from lsst.summit.utils.quickLook import QuickLookIsrTask
 
 
 class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    bestEffortIsr: BestEffortIsr
+    dataId: dict[str, int]
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             cls.bestEffortIsr = BestEffortIsr()
         except (FileNotFoundError, ValueError):
@@ -40,7 +44,7 @@ class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
         # main@USDF - LATISS/raw/all
         cls.dataId = {"day_obs": 20251021, "seq_num": 443, "detector": 0}
 
-    def test_getExposure(self):
+    def test_getExposure(self) -> None:
         # in most locations this will load a pre-made image
         exp = self.bestEffortIsr.getExposure(self.dataId)
         self.assertIsInstance(exp, afwImage.Exposure)
@@ -49,7 +53,7 @@ class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
         exp = self.bestEffortIsr.getExposure(self.dataId, forceRemake=True)
         self.assertIsInstance(exp, afwImage.Exposure)
 
-    def test_getExposureFromExpRecord(self):
+    def test_getExposureFromExpRecord(self) -> None:
         """Test getting with an expRecord. This requires also passing in
         the detector number as a kwarg.
         """
@@ -67,28 +71,28 @@ class BestEffortIsrTestCase(lsst.utils.tests.TestCase):
         exp = self.bestEffortIsr.getExposure(expRecord.dataId, detector=0, forceRemake=True)
         self.assertIsInstance(exp, afwImage.Exposure)
 
-    def test_raises(self):
+    def test_raises(self) -> None:
         """Ensure function cannot be called without specifying a detector."""
         dataId = self.dataId
         dataId.pop("detector")
         with self.assertRaises(ValueError):
             self.bestEffortIsr.getExposure(dataId)
 
-    def test_quicklook_connections(self):
+    def test_quicklook_connections(self) -> None:
         """Test that various QuickLookIsrConnections inputs are no longer
         required.
         """
         connections = QuickLookIsrTask.ConfigClass.ConnectionsClass(config=QuickLookIsrTask.ConfigClass())
-        self.assertEqual(connections.bias.minimum, 0)
-        self.assertEqual(connections.flat.minimum, 0)
-        self.assertEqual(connections.ccdExposure.minimum, 1)
+        self.assertEqual(connections.bias.minimum, 0)  # type: ignore[attr-defined]
+        self.assertEqual(connections.flat.minimum, 0)  # type: ignore[attr-defined]
+        self.assertEqual(connections.ccdExposure.minimum, 1)  # type: ignore[attr-defined]
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

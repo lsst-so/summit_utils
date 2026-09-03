@@ -142,7 +142,7 @@ def countPixels(maskedImage: afwImage.MaskedImage, maskPlane: str) -> int:
     return len(np.where(np.bitwise_and(maskedImage.mask.array, bit))[0])
 
 
-def quickSmooth(data: npt.NDArray[np.float64], sigma: float = 2) -> npt.NDArray[np.float64]:
+def quickSmooth(data: npt.NDArray[np.floating[Any]], sigma: float = 2) -> npt.NDArray[np.floating[Any]]:
     """Perform a quick smoothing of the image.
 
     Not to be used for scientific purposes, but improves the stretch and
@@ -1640,7 +1640,15 @@ class RobustFitter:
         """Clear any stored fit state."""
         self._clearState()
 
-    def plotBestFit(self, ax: matplotlib.axes.Axes, label=None, color=None, alphaBand=0.2, lw=2, nBins=5):
+    def plotBestFit(
+        self,
+        ax: matplotlib.axes.Axes,
+        label: str | None = None,
+        color: str | None = None,
+        alphaBand: float = 0.2,
+        lw: float = 2,
+        nBins: int = 5,
+    ) -> matplotlib.axes.Axes:
         """Plot the best fit line, confidence interval,
         and optionally scatter/binned data.
 
@@ -1654,7 +1662,7 @@ class RobustFitter:
             Color for the fit line and confidence band.
         alphaBand : float, optional
             Alpha transparency for the confidence interval band.
-        lw : int, optional
+        lw : float, optional
             Line width for the best fit line.
         nBins : int, optional
             Number of bins for binned statistics.

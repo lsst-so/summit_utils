@@ -12,3 +12,5 @@ jobs:
     with:
       # https://github.com/python/mypy/issues/17002
       mypy_package: mypy!=1.9.0
+      # The shared workflow checks python/ only unless told otherwise.
+      folders: "python tests"

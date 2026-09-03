@@ -31,6 +31,7 @@ __all__ = [
 ]
 
 import copy
+import datetime
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -254,7 +255,7 @@ def calculateMountErrors(
 def plotMountErrors(
     mountData: MountData,
     mountErrors: MountErrors,
-    figure=None,
+    figure: Figure | None = None,
     saveFilename: str = "",
 ) -> Figure:
     mountData = copy.deepcopy(mountData)  # Ensure we don't modify the original data
@@ -280,10 +281,12 @@ def plotMountErrors(
     chile_tz = ZoneInfo("America/Santiago")
 
     # Function to convert UTC to Chilean time
-    def offset_time_aware(utc_time):
+    def offset_time_aware(utc_time: datetime.datetime) -> datetime.datetime:
         # Ensure the time is timezone-aware in UTC
         if utc_time.tzinfo is None:
-            utc_time = utc.localize(utc_time)
+            # zoneinfo attaches the zone with replace(); localize() is
+            # pytz's API and would raise AttributeError here.
+            utc_time = utc_time.replace(tzinfo=utc)
         return utc_time.astimezone(chile_tz)
 
     [[ax1, ax4], [ax2, ax5], [ax3, ax6]] = figure.subplots(

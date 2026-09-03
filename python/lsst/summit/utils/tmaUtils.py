@@ -25,7 +25,7 @@ import enum
 import itertools
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -187,7 +187,7 @@ def getAzimuthElevationDataForEvent(
         The elevation data for the specified event.
     """
 
-    def calcDeltaT(params, args):
+    def calcDeltaT(params: Sequence[float], args: Sequence[np.ndarray]) -> float:
         # This calculates the deltaT needed
         # to make the median(error) = 0
         [values, valTimes, demand, demTimes] = args
@@ -195,7 +195,7 @@ def getAzimuthElevationDataForEvent(
         demandInterp = np.interp(valTimes, demTimes + deltaT, demand)
         error = (values - demandInterp) * 3600
         value = abs(np.median(error))
-        return value
+        return float(value)
 
     azimuthData = getEfdData(
         client,
@@ -851,7 +851,7 @@ class TMAEvent:
     duration: float  # seconds
     begin: Time
     end: Time
-    blockInfos: list = field(default_factory=list)
+    blockInfos: list | None = field(default_factory=list)
     version: int = 0  # update this number any time a code change which could change event definitions is made
     _startRow: int
     _endRow: int
@@ -974,7 +974,7 @@ class TMAEvent:
         if blockSeqNum is not None and block is None:
             raise ValueError("block must be specified if blockSeqNum is specified")
 
-        for blockInfo in self.blockInfos:
+        for blockInfo in self.blockInfos or []:
             # "X is None or" is used for each parameter to allow it to be None
             # in the kwargs
             blockMatches = False

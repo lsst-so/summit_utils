@@ -21,7 +21,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, overload
 
 __all__ = [
     "GuiderReader",
@@ -59,7 +60,7 @@ if TYPE_CHECKING:
     from lsst.geom import SkyWcs
 
 
-def make_subplot(nrows=1, ncols=1, **fig_kwargs):
+def make_subplot(nrows: int = 1, ncols: int = 1, **fig_kwargs: Any) -> tuple[plt.Figure, Any]:
     """Return (fig, axs) using LSST's make_figure."""
     fig = make_figure(**fig_kwargs)
     axs = fig.subplots(nrows=nrows, ncols=ncols, squeeze=True)
@@ -533,25 +534,42 @@ class GuiderData(BaseModel):
         return float(raw)
 
     # Iterable / dict-like helpers
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:  # type: ignore[override]
         """Iterate over detector names in guiderNames order."""
         return iter(self.guiderNames)
 
-    def items(self):
+    def items(self) -> Iterator[tuple[str, Stamps]]:
         """Yield (detName, stamps) pairs like dict.items()."""
         for det in self.guiderNames:
             yield det, self.stampsMap[det]
 
-    def keys(self):
+    def keys(self) -> Iterator[str]:
         """Iterate over detector names (dict-like .keys())."""
         return iter(self.guiderNames)
 
-    def values(self):
+    def values(self) -> Iterator[Stamps]:
         """Iterate over Stamps objects in guiderNames order."""
         for det in self.guiderNames:
             yield self.stampsMap[det]
 
-    def __getitem__(self, key):
+    @overload
+    def __getitem__(self, key: str) -> Stamps: ...
+
+    @overload
+    def __getitem__(self, key: int) -> np.ndarray: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[np.ndarray]: ...
+
+    @overload
+    def __getitem__(self, key: tuple[str, int]) -> np.ndarray: ...
+
+    @overload
+    def __getitem__(self, key: tuple[str, slice]) -> list[np.ndarray]: ...
+
+    def __getitem__(
+        self, key: str | int | slice | tuple[str, int | slice]
+    ) -> Stamps | np.ndarray | list[np.ndarray]:
         """
         Direct stamp access helper.
 
@@ -625,7 +643,12 @@ class GuiderData(BaseModel):
         return GuiderPlotter(self)
 
     def plotStamp(
-        self, detName: str, stampNum: int, plo: float = 90, phi: float = 99.5, figsize=(10, 8)
+        self,
+        detName: str,
+        stampNum: int,
+        plo: float = 90,
+        phi: float = 99.5,
+        figsize: tuple[float, float] = (10, 8),
     ) -> plt.Figure:
         """
         Plot a single guider stamp.

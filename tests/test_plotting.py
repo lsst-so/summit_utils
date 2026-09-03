@@ -35,18 +35,22 @@ from lsst.summit.utils.utils import detectObjectsInExp
 
 
 class PlottingTestCase(lsst.utils.tests.TestCase):
+    outputDir: str
+
     try:
         afwDataDir = lsst.utils.getPackageDir("afwdata")
     except Exception:
-        afwDataDir = None
+        # Empty rather than None so the attribute stays a str for the
+        # os.path.join below; skipUnless treats it as falsy either way.
+        afwDataDir = ""
     filename = "postISRCCD_2020021800224-EMPTY~EMPTY-det000.fits.fz"
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.outputDir = tempfile.mkdtemp()
 
     @unittest.skipUnless(afwDataDir, "afwdata not available")
-    def test_plot(self):
+    def test_plot(self) -> None:
         """Test that the the plot is made and saved"""
         fullName = os.path.join(self.afwDataDir, "LATISS/postISRCCD", self.filename)
         exp = afwImage.ExposureF(fullName)
@@ -93,7 +97,7 @@ class PlottingTestCase(lsst.utils.tests.TestCase):
         plot(nparr)
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

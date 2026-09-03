@@ -24,6 +24,7 @@
 import asyncio
 import datetime
 import unittest
+from typing import Any
 
 import astropy
 import pandas as pd
@@ -58,9 +59,16 @@ vcr = getVcr()
 @unittest.skipIf(not HAS_EFD_CLIENT, "No EFD client available")
 @vcr.use_cassette()
 class EfdUtilsTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    client: Any
+    dayObs: int
+    axisTopic: str
+    timeSeriesTopic: str
+    event: TMAEvent
+
     @classmethod
     @vcr.use_cassette()
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             cls.client = makeEfdClient(testing=True)
         except RuntimeError:
@@ -84,17 +92,17 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
         )
 
     @vcr.use_cassette()
-    def tearDown(self):
+    def tearDown(self) -> None:
         loop = asyncio.get_event_loop()
         if self.client.influx_client is not None:
             loop.run_until_complete(self.client.influx_client.close())
 
     @vcr.use_cassette()
-    def test_makeEfdClient(self):
+    def test_makeEfdClient(self) -> None:
         self.assertIsInstance(self.client, lsst_efd_client.efd_helper.EfdClient)
 
     @vcr.use_cassette()
-    def test_getTopics(self):
+    def test_getTopics(self) -> None:
         topics = getTopics(self.client, "lsst.sal.MTMount*")
         self.assertIsInstance(topics, list)
         self.assertGreater(len(topics), 0)
@@ -114,7 +122,7 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(len(topics), 0)
 
     @vcr.use_cassette()
-    def test_getEfdData(self):
+    def test_getEfdData(self) -> None:
         dayStart = getDayObsStartTime(self.dayObs)
         dayEnd = getDayObsEndTime(self.dayObs)
         oneDay = datetime.timedelta(hours=24)
@@ -173,7 +181,7 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
             _ = getEfdData(self.client, "badTopic", begin=dayStart, end=dayEnd)
 
     @vcr.use_cassette()
-    def test_raiseIfTopicNotInSchema(self):
+    def test_raiseIfTopicNotInSchema(self) -> None:
         dayStart = getDayObsStartTime(self.dayObs)
         dayEnd = getDayObsEndTime(self.dayObs)
 
@@ -186,7 +194,7 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
             _ = getEfdData(self.client, badTopic, begin=dayStart, end=dayEnd)
 
     @vcr.use_cassette()
-    def test_getMostRecentRowWithDataBefore(self):
+    def test_getMostRecentRowWithDataBefore(self) -> None:
         time = Time(1687845854.736784, scale="utc", format="unix")
         rowData = getMostRecentRowWithDataBefore(
             self.client, "lsst.sal.MTM1M3.logevent_forceActuatorState", time
@@ -196,19 +204,19 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
         stateTime = efdTimestampToAstropy(rowData["private_efdStamp"])
         self.assertLess(stateTime, time)
 
-    def test_efdTimestampToAstropy(self):
+    def test_efdTimestampToAstropy(self) -> None:
         time = efdTimestampToAstropy(1687845854.736784)
         self.assertIsInstance(time, astropy.time.Time)
         return
 
-    def test_astropyToEfdTimestamp(self):
+    def test_astropyToEfdTimestamp(self) -> None:
         time = Time(1687845854.736784, scale="utc", format="unix")
         efdTimestamp = astropyToEfdTimestamp(time)
         self.assertIsInstance(efdTimestamp, float)
         return
 
     @vcr.use_cassette()
-    def test_clipDataToEvent(self):
+    def test_clipDataToEvent(self) -> None:
         # get 10 mins of data either side of the event we'll clip to
         duration = datetime.timedelta(seconds=10 * 60)
         queryBegin = self.event.begin - duration
@@ -261,7 +269,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

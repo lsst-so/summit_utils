@@ -24,6 +24,7 @@ import tempfile
 import unittest
 
 import lsst.utils.tests
+from lsst.daf.butler import Butler
 from lsst.summit.utils import ImageExaminer
 from lsst.summit.utils.bestEffort import BestEffortIsr
 from lsst.summit.utils.butlerUtils import makeDefaultLatissButler
@@ -31,8 +32,15 @@ from lsst.summit.utils.utils import getSite
 
 
 class ImageExaminerTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    butler: Butler
+    dataId: dict[str, int]
+    bestEffort: BestEffortIsr
+    outputDir: str
+    outputFilename: str
+
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             if getSite() == "jenkins":
                 raise unittest.SkipTest("Skip running butler-driven tests in Jenkins.")
@@ -46,7 +54,7 @@ class ImageExaminerTestCase(lsst.utils.tests.TestCase):
         cls.outputDir = tempfile.mkdtemp()
         cls.outputFilename = os.path.join(cls.outputDir, "testImageExaminer.jpg")
 
-    def test_imageExaminer(self):
+    def test_imageExaminer(self) -> None:
         """Test that the animator produces a large file without worrying about
         the contents?
         """
@@ -64,7 +72,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 

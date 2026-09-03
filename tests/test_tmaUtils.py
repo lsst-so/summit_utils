@@ -24,6 +24,7 @@
 import asyncio
 import os
 import unittest
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,7 +60,7 @@ TESTDIR = os.path.abspath(os.path.dirname(__file__))
 vcr = getVcr()
 
 
-def getTmaEventTestTruthValues():
+def getTmaEventTestTruthValues() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Get the current truth values for the TMA event test cases.
 
     Returns
@@ -85,7 +86,7 @@ def getTmaEventTestTruthValues():
     return seqNums, startRows, endRows, types, endReasons
 
 
-def writeNewTmaEventTestTruthValues():
+def writeNewTmaEventTestTruthValues() -> None:
     """This function is used to write out the truth values for the test cases.
 
     If the internal event creation logic changes, these values can change, and
@@ -113,14 +114,14 @@ def writeNewTmaEventTestTruthValues():
             f.write(line + "\n")
 
 
-def makeValid(tma):
+def makeValid(tma: TMAStateMachine) -> None:
     """Helper function to turn a TMA into a valid state."""
     for name, value in tma._parts.items():
         if value == tma._UNINITIALIZED_VALUE:
             tma._parts[name] = 1
 
 
-def _turnOn(tma):
+def _turnOn(tma: TMAStateMachine) -> None:
     """Helper function to turn TMA axes on for testing.
 
     Do not call directly in normal usage or code, as this just arbitrarily
@@ -136,7 +137,7 @@ def _turnOn(tma):
 
 
 class TmaUtilsTestCase(lsst.utils.tests.TestCase):
-    def test_tmaInit(self):
+    def test_tmaInit(self) -> None:
         tma = TMAStateMachine()
         self.assertFalse(tma._isValid)
 
@@ -152,7 +153,7 @@ class TmaUtilsTestCase(lsst.utils.tests.TestCase):
         tma._parts["elevationSystemState"] = 1
         self.assertTrue(tma._isValid)
 
-    def test_tmaReferences(self):
+    def test_tmaReferences(self) -> None:
         """Check the linkage between the component lists and the _parts
         dict.
         """
@@ -166,7 +167,7 @@ class TmaUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(tma._parts["azimuthMotionState"], AxisMotionState.TRACKING)
         self.assertEqual(tma._parts["elevationMotionState"], AxisMotionState.TRACKING)
 
-    def test_getAxisAndType(self):
+    def test_getAxisAndType(self) -> None:
         # check both the long and short form names work
         for s in ["azimuthMotionState", "lsst.sal.MTMount.logevent_azimuthMotionState"]:
             self.assertEqual(getAxisAndType(s), ("azimuth", "MotionState"))
@@ -178,7 +179,7 @@ class TmaUtilsTestCase(lsst.utils.tests.TestCase):
         for s in ["azimuthSystemState", "lsst.sal.MTMount.logevent_azimuthSystemState"]:
             self.assertEqual(getAxisAndType(s), ("azimuth", "SystemState"))
 
-    def test_initStateLogic(self):
+    def test_initStateLogic(self) -> None:
         tma = TMAStateMachine()
         self.assertFalse(tma._isValid)
         self.assertFalse(tma.isMoving)
@@ -217,9 +218,17 @@ class TmaUtilsTestCase(lsst.utils.tests.TestCase):
 
 @vcr.use_cassette()
 class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
+    # class attributes populated in setUpClass
+    client: Any
+    dayObs: int
+    dayObsWithBlockInfo: int
+    tmaEventMaker: TMAEventMaker
+    events: list[TMAEvent]
+    sampleData: Any
+
     @classmethod
     @vcr.use_cassette()
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         try:
             cls.client = makeEfdClient(testing=True)
         except RuntimeError:
@@ -233,19 +242,19 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         cls.sampleData = cls.tmaEventMaker._data[cls.dayObs]  # pull the data from the object and test length
 
     @vcr.use_cassette()
-    def tearDown(self):
+    def tearDown(self) -> None:
         loop = asyncio.get_event_loop()
         if self.client.influx_client is not None:
             loop.run_until_complete(self.client.influx_client.close())
 
     @vcr.use_cassette()
-    def test_events(self):
+    def test_events(self) -> None:
         data = self.sampleData
         self.assertIsInstance(data, pd.DataFrame)
         self.assertEqual(len(data), 800)
 
     @vcr.use_cassette()
-    def test_rowDataForValues(self):
+    def test_rowDataForValues(self) -> None:
         rowsFor = set(self.sampleData["rowFor"])
         self.assertEqual(len(rowsFor), 6)
 
@@ -262,13 +271,13 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertSetEqual(rowsFor, correct)
 
     @vcr.use_cassette()
-    def test_monotonicTimeInDataframe(self):
+    def test_monotonicTimeInDataframe(self) -> None:
         # ensure that each row is later than the previous
         times = self.sampleData["private_efdStamp"]
         self.assertTrue(np.all(np.diff(times) > 0))
 
     @vcr.use_cassette()
-    def test_monotonicTimeApplicationOfRows(self):
+    def test_monotonicTimeApplicationOfRows(self) -> None:
         # ensure you can apply rows in the correct order
         tma = TMAStateMachine()
         row1 = self.sampleData.iloc[0]
@@ -285,7 +294,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
             tma.apply(row1)
 
     @vcr.use_cassette()
-    def test_fullDaySequence(self):
+    def test_fullDaySequence(self) -> None:
         # make sure we can apply all the data from the day without falling
         # through the logic sieve
         for engineering in (True, False):
@@ -297,7 +306,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
                 tma.apply(row)
 
     @vcr.use_cassette()
-    def test_endToEnd(self):
+    def test_endToEnd(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObs)
         self.assertIsInstance(events, list)
@@ -322,7 +331,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(len(eventSet), len(slews))
 
     @vcr.use_cassette()
-    def test_noDataBehaviour(self):
+    def test_noDataBehaviour(self) -> None:
         eventMaker = self.tmaEventMaker
         noDataDayObs = 19600101  # do not use 19700101 - there is data for that day!
         with self.assertLogs(level="WARNING") as cm:
@@ -334,7 +343,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
             self.assertIn(correctMsg, msg)
 
     @vcr.use_cassette()
-    def test_helperFunctions(self):
+    def test_helperFunctions(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObs)
 
@@ -345,7 +354,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(slews, foundSlews)
         self.assertEqual(tracks, foundTracks)
 
-    def test_filterBadValues(self):
+    def test_filterBadValues(self) -> None:
         # NB: if you add enough spurious values that the median is no longer
         # the value around which your "good" values are oscillating the first
         # two points will get replaced and this can be very confusing!
@@ -442,7 +451,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(nReplaced, 1)
 
     @vcr.use_cassette()
-    def test_getEvent(self):
+    def test_getEvent(self) -> None:
         # test the singular event getter, and what happens if the event doesn't
         # exist for the day
         eventMaker = self.tmaEventMaker
@@ -463,14 +472,14 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
             self.assertIn(correctMsg, msg)
 
     @vcr.use_cassette()
-    def test_printing(self):
+    def test_printing(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObs)
 
         # test str(), repr(), and _ipython_display_() for an event
         print(str(events[0]))
         print(repr(events[0]))
-        print(events[0]._ipython_display_())
+        events[0]._ipython_display_()
 
         # spot-check both a slow and a track to print
         slews = [e for e in events if e.type == TMAState.SLEWING]
@@ -487,7 +496,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         eventMaker.printTmaDetailedState(tma)
 
     @vcr.use_cassette()
-    def test_getAxisData(self):
+    def test_getAxisData(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObs)
 
@@ -506,7 +515,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         plotEvent(self.client, events[0], azimuthData=azData, elevationData=elData)
 
     @vcr.use_cassette()
-    def test_plottingAndCommands(self):
+    def test_plottingAndCommands(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObs)
         event = events[10]  # this one has commands, and we'll check that later
@@ -528,7 +537,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         del fig
 
     @vcr.use_cassette()
-    def test_findEvent(self):
+    def test_findEvent(self) -> None:
         eventMaker = self.tmaEventMaker
         # addBlockInfo=True because it shouldn't affect the comparison, and
         # this also then ensures that the code is exercised too
@@ -579,7 +588,7 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertIsNone(found, lastEvent)
 
     @vcr.use_cassette()
-    def test_eventAssociatedWith(self):
+    def test_eventAssociatedWith(self) -> None:
         eventMaker = self.tmaEventMaker
         events = eventMaker.getEvents(self.dayObsWithBlockInfo)
         eventsWithBlockInfo = [e for e in events if e.blockInfos]
@@ -588,9 +597,11 @@ class TMAEventMakerTestCase(lsst.utils.tests.TestCase):
         self.assertEqual(len(eventsWithBlockInfo), 65)
         self.assertEqual(len(eventsWithoutBlockInfo), 4)
 
-        self.assertIsNotNone(eventsWithoutBlockInfo[0].blockInfos)
-        self.assertIsInstance(eventsWithoutBlockInfo[0].blockInfos, list)
-        self.assertEqual(len(eventsWithoutBlockInfo[0].blockInfos), 0)
+        firstBlockInfos = eventsWithoutBlockInfo[0].blockInfos
+        self.assertIsNotNone(firstBlockInfos)
+        self.assertIsInstance(firstBlockInfos, list)
+        assert firstBlockInfos is not None  # narrow for mypy; asserted non-None just above
+        self.assertEqual(len(firstBlockInfos), 0)
 
         event = eventsWithBlockInfo[0]
         self.assertIsInstance(event, TMAEvent)
@@ -630,7 +641,7 @@ class TestMemory(lsst.utils.tests.MemoryTestCase):
     pass
 
 
-def setup_module(module):
+def setup_module(module: object) -> None:
     lsst.utils.tests.init()
 
 
