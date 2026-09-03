@@ -4,3 +4,7 @@
 pytest
 responses
 types-requests
+# Without these, @deprecated from deprecated.sphinx is untyped, which
+# erases the signature of every function it decorates - including
+# makeDefaultLatissButler, leaving the whole butler test case unchecked.
+types-Deprecated

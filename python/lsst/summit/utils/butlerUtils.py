@@ -467,7 +467,9 @@ def getExpIdFromDayObsSeqNum(butler: dafButler.Butler, dataId: dafButler.DataId)
     return {"exposure": expRecord.id}
 
 
-def updateDataIdOrDataCord(dataId: dafButler.DataId, **updateKwargs: Any) -> Mapping[str, Any]:
+def updateDataIdOrDataCord(
+    dataId: dafButler.DataId | dafButler.DimensionRecord, **updateKwargs: Any
+) -> Mapping[str, Any]:
     """Add key, value pairs to a dataId or data coordinate.
 
     Parameters
@@ -493,7 +495,9 @@ def updateDataIdOrDataCord(dataId: dafButler.DataId, **updateKwargs: Any) -> Map
     return newId
 
 
-def fillDataId(butler: DirectButler, dataId: dafButler.DataId) -> Mapping[str, Any]:
+def fillDataId(
+    butler: DirectButler, dataId: dafButler.DataId | dafButler.DimensionRecord
+) -> Mapping[str, Any]:
     """Given a dataId, fill it with values for all available dimensions.
 
     Parameters
@@ -651,7 +655,7 @@ def getDayObsSeqNumFromExposureId(butler: dafButler.Butler, dataId: Mapping[str,
 
 
 def getDatasetRefForDataId(
-    butler: dafButler.Butler, datasetType: str | dafButler.DatasetType, dataId: dict[str, Any]
+    butler: dafButler.Butler, datasetType: str | dafButler.DatasetType, dataId: dafButler.DataId
 ) -> dafButler.DatasetRef | None:
     """Get the datasetReference for a dataId.
 
@@ -661,7 +665,7 @@ def getDatasetRefForDataId(
         The butler.
     datasetType : `str` or `datasetType`
         The dataset type.
-    dataId : `dict[str, Any]`
+    dataId : `dafButler.DataId`
         The dataId.
 
     Returns
@@ -669,11 +673,12 @@ def getDatasetRefForDataId(
     datasetRef : `lsst.daf.butler.dimensions.DatasetReference`
         The dataset reference.
     """
-    if not _expid_present(dataId):
-        assert _dayobs_present(dataId) and _seqnum_present(dataId)
-        dataId.update(getExpIdFromDayObsSeqNum(butler, dataId))
+    dictId = _assureDict(dataId)
+    if not _expid_present(dictId):
+        assert _dayobs_present(dictId) and _seqnum_present(dictId)
+        dictId.update(getExpIdFromDayObsSeqNum(butler, dictId))
 
-    dRef = butler.find_dataset(datasetType, dataId)
+    dRef = butler.find_dataset(datasetType, dictId)
     return dRef
 
 

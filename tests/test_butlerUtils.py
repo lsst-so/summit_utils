@@ -28,7 +28,8 @@ from typing import Any, Iterable
 
 import lsst.daf.butler as dafButler
 import lsst.utils.tests
-from lsst.daf.butler import DatasetRef
+from lsst.daf.butler import DatasetRef, DimensionRecord
+from lsst.daf.butler.direct_butler import DirectButler
 from lsst.resources import ResourcePath
 from lsst.summit.utils.butlerUtils import removeDataProduct  # noqa: F401
 from lsst.summit.utils.butlerUtils import (
@@ -76,10 +77,13 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         try:
             if getSite() == "jenkins":
                 raise unittest.SkipTest("Skip running butler-driven tests in Jenkins.")
-            self.butler = makeDefaultLatissButler()
+            butler = makeDefaultLatissButler()
         except FileNotFoundError:
             raise unittest.SkipTest("Skipping tests that require the LATISS butler repo.")
-        self.assertIsInstance(self.butler, dafButler.Butler)
+        # fillDataId() and getLatissOnSkyDataIds() use DirectButler-only APIs,
+        # so pin the concrete type rather than fail deep inside them.
+        assert isinstance(butler, DirectButler)
+        self.butler = butler
 
         # dict-like dataIds
         self.rawDataId = getMostRecentDataId(self.butler)
@@ -247,10 +251,10 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
 
     def test_sortRecordsByDayObsThenSeqNum(self) -> None:
         where = "exposure.day_obs=dayObs"
-        expRecords = self.butler.registry.queryDimensionRecords(
+        recordResults = self.butler.registry.queryDimensionRecords(
             "exposure", where=where, bind={"dayObs": RECENT_DAY}
         )
-        expRecords = list(expRecords)
+        expRecords = list(recordResults)
         self.assertGreaterEqual(len(expRecords), 1)  # just ensure we're not doing a no-op test
         random.shuffle(expRecords)  # they are often already in order, so make sure they're not
         sortedIds = sortRecordsByDayObsThenSeqNum(expRecords)
@@ -259,10 +263,10 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
 
         # Check that ambiguous sorts raise as expected
         with self.assertRaises(ValueError):
-            expRecords = self.butler.registry.queryDimensionRecords(
+            recordResults = self.butler.registry.queryDimensionRecords(
                 "exposure", where=where, bind={"dayObs": RECENT_DAY}
             )
-            expRecords = list(expRecords)
+            expRecords = list(recordResults)
             self.assertGreaterEqual(len(expRecords), 1)  # just ensure we're not doing a no-op test
             expRecords.append(expRecords[0])  # add a duplicate
             sortedIds = sortRecordsByDayObsThenSeqNum(expRecords)
@@ -282,7 +286,11 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
     def test_updateDataIdOrDataCord(self) -> None:
         updateVals = {"testKey": "testValue"}
 
-        ids = [self.rawDataId, self.expRecordNoDetector, self.dataCoordMinimal]
+        ids: list[dafButler.DataId | DimensionRecord] = [
+            self.rawDataId,
+            self.expRecordNoDetector,
+            self.dataCoordMinimal,
+        ]
         for originalId in ids:
             testId = updateDataIdOrDataCord(originalId, **updateVals)
             for k, v in updateVals.items():
@@ -297,7 +305,11 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertTrue(_dayobs_present(fullId))
         self.assertTrue(_seqnum_present(fullId))
 
-        ids = [self.rawDataId, self.expRecordNoDetector, self.dataCoordMinimal]
+        ids: list[dafButler.DataId | DimensionRecord] = [
+            self.rawDataId,
+            self.expRecordNoDetector,
+            self.dataCoordMinimal,
+        ]
         for dataId in ids:
             fullId = fillDataId(self.butler, dataId)
             self.assertTrue(_dayobs_present(fullId))
@@ -346,14 +358,15 @@ class ButlerUtilsTestCase(lsst.utils.tests.TestCase):
         return
 
     def test__assureDict(self) -> None:
-        for item in [
+        items: list[dafButler.DataId | DimensionRecord] = [
             self.rawDataId,
             self.fullId,
             self.expIdOnly,
             self.expRecordNoDetector,
             self.dataCoordMinimal,
             self.rawDataIdNoDayObSeqNum,
-        ]:
+        ]
+        for item in items:
             testId = _assureDict(item)
             self.assertIsInstance(testId, dict)
         return
