@@ -43,6 +43,8 @@ from lsst.afw.math import STDEVCLIP, makeStatistics
 
 from .reading import GuiderData
 
+log = logging.getLogger(__name__)
+
 _DEFAULT_COLUMNS: str = (
     "trackid detector expid elapsed_time dalt daz dtheta dx dy "
     "fwhm xroi yroi xccd yccd xroi_ref yroi_ref xccd_ref yccd_ref "
@@ -87,6 +89,11 @@ class GuiderStarTrackerConfig:
         Aperture size in arcseconds for star detection.
     gain : `float`
         Gain factor for the guider data, used in flux calculations.
+    nFallbackStamps : `int`
+        Number of individual stamps to sample when coadd detection fails.
+    peakSnrThreshold : `float`
+        Minimum peak pixel SNR to consider a stamp non-empty during
+        single-stamp fallback detection.
     """
 
     minSnr: float = 10.0
@@ -96,6 +103,8 @@ class GuiderStarTrackerConfig:
     cutOutSize: int = 50
     aperSizeArcsec: float = 5.0
     gain: float = 1.0
+    nFallbackStamps: int = 10
+    peakSnrThreshold: float = 5.0
 
 
 def trackStarAcrossStamp(
@@ -330,6 +339,7 @@ def runSourceDetection(
     if not footprints:
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
 
+    nFootprints = len(footprints.getFootprints())
     results = []
     for fp in footprints.getFootprints():
         # Create a cutout of the image around the footprint
@@ -338,6 +348,11 @@ def runSourceDetection(
         if not star.empty:
             results.append(star)
     if not results:
+        if nFootprints > 0:
+            log.warning(
+                f"FootprintSet found {nFootprints} sources but GalSim "
+                f"failed on all of them (cutOutSize={cutOutSize})."
+            )
         return pd.DataFrame(columns=DEFAULT_COLUMNS)
     df = pd.concat([sf for sf in results], ignore_index=True)
     return df
@@ -373,10 +388,16 @@ def measureStarOnStamp(
         StarMeasurement object with populated fields (may be empty on failure).
     """
     cutout = getCutouts(stamp, refCenter, cutoutSize=cutOutSize)
-    data = cutout.data
+    data = cutout.data.copy()
 
-    if np.all(data == 0) | (not np.isfinite(data).all()):
+    if np.all(data == 0):
         return StarMeasurement()
+
+    # Replace NaN (from border-clipped cutouts) with the median so
+    # GalSim can still measure stars near the stamp edge.
+    nan_mask = ~np.isfinite(data)
+    if nan_mask.any():
+        data[nan_mask] = np.nanmedian(data)
 
     # 1) Subtract the background
     annulus = (apertureRadius * 1.0, apertureRadius * 2)
@@ -439,7 +460,7 @@ def runGalSim(
         ellipticity = np.sqrt(e1**2 + e2**2)
         nEff = 2 * np.pi * sigma**2 * np.sqrt(1 - ellipticity**2)
         shotNoise = np.sqrt(nEff * bkgStd**2)
-        fluxErr = np.sqrt(flux / gain + shotNoise**2)
+        fluxErr = np.sqrt(max(0, flux / gain) + shotNoise**2)
         snr = flux / (shotNoise + 1e-9) if shotNoise > 0 else 0.0
 
         # Calculate second moments
@@ -597,6 +618,69 @@ def makeEllipticalGaussianStar(
     return image
 
 
+def _detectOnSingleStamps(
+    guiderData: GuiderData,
+    guiderName: str,
+    config: GuiderStarTrackerConfig,
+    apertureRadius: int,
+    log: logging.Logger,
+) -> pd.DataFrame:
+    """Try source detection on individual stamps when coadd detection fails.
+
+    Samples up to ``config.nFallbackStamps`` stamps evenly spread across
+    the sequence. Returns the detection with the highest SNR, or an empty
+    DataFrame if no star is found on any stamp.
+
+    A stamp is considered truly empty if its peak pixel SNR
+    (max - median) / std is below ``config.peakSnrThreshold``.
+    """
+    nStamps = len(guiderData)
+    if nStamps == 0:
+        return pd.DataFrame(columns=DEFAULT_COLUMNS)
+
+    nSample = min(config.nFallbackStamps, nStamps)
+    indices = np.linspace(0, nStamps - 1, nSample, dtype=int)
+
+    bestSources = pd.DataFrame(columns=DEFAULT_COLUMNS)
+    bestSnr = 0.0
+    nTrulyEmpty = 0
+
+    for idx in indices:
+        stamp = guiderData[guiderName, idx].astype(np.float32)
+        arr = stamp - np.nanmin(stamp)
+
+        # Quick peak-SNR check before running full detection
+        med = np.nanmedian(arr)
+        std = np.nanstd(arr)
+        if std > 0:
+            peakSnr = (np.nanmax(arr) - med) / std
+        else:
+            peakSnr = 0.0
+
+        if peakSnr < config.peakSnrThreshold:
+            nTrulyEmpty += 1
+            continue
+
+        sources = runSourceDetection(
+            arr,
+            threshold=config.minSnr,
+            apertureRadius=apertureRadius,
+            cutOutSize=config.cutOutSize,
+            gain=config.gain,
+        )
+        if not sources.empty and sources["snr"].max() > bestSnr:
+            bestSnr = sources["snr"].max()
+            bestSources = sources
+
+    if not bestSources.empty:
+        log.info(
+            f"Single-stamp fallback recovered source on {guiderName} "
+            f"(SNR={bestSnr:.1f}, {nTrulyEmpty}/{nSample} stamps empty)"
+        )
+
+    return bestSources
+
+
 def buildReferenceCatalog(
     guiderData: GuiderData,
     log: logging.Logger,
@@ -638,9 +722,17 @@ def buildReferenceCatalog(
             cutOutSize=cutOutSize,
             gain=gain,
         )
+        detectionMethod = "coadd"
+        if sources.empty:
+            # Fallback: try detection on individual stamps. The coadd can
+            # wash out stars that drift between frames or have artifacts.
+            sources = _detectOnSingleStamps(guiderData, guiderName, config, apertureRadius, log)
+            detectionMethod = "single_stamp"
         if sources.empty:
             log.warning(f"No sources detected in `buildReferenceCatalog`for {guiderName} in {expId}. ")
             continue
+
+        sources["detection_method"] = detectionMethod
 
         sources.sort_values(by=["snr"], ascending=False, inplace=True)
         sources.reset_index(drop=True, inplace=True)
@@ -681,23 +773,39 @@ def getCutouts(imageArray: np.ndarray, refCenter: tuple[float, float], cutoutSiz
     return Cutout2D(imageArray, (refX, refY), size=cutoutSize, mode="partial", fill_value=np.nan)
 
 
-def isBlankImage(image: np.ndarray, fluxMin: int = 300) -> bool:
+def isBlankImage(image: np.ndarray, fluxMin: float = 300, peakSnrMin: float = 5.0) -> bool:
     """
     Returns True if the image has no significant source (e.g., no star).
 
+    An image is considered non-blank if the peak flux above the median
+    exceeds ``fluxMin`` OR the peak pixel SNR (using MAD-based robust
+    std) exceeds ``peakSnrMin``.
+
     Parameters
     ----------
-    image : 2D array
-        Image data (float or int).
-    fluxMin : float
-        Minimum deviation from the background median to be considered a source.
+    image : `np.ndarray`
+        2D image data.
+    fluxMin : `float`
+        Minimum peak flux above median (ADU) to consider non-blank.
+    peakSnrMin : `float`
+        Minimum peak pixel SNR to consider non-blank.
 
     Returns
     -------
     bool
         True if the image is blank, False otherwise.
-        (no pixel deviates more than flux_min)
     """
     med = np.nanmedian(image)
-    diff = np.abs(image - med)
-    return not np.any(diff > fluxMin)
+    peakFlux = np.nanmax(image) - med
+
+    # Absolute flux check
+    if peakFlux > fluxMin:
+        return False
+
+    # SNR check with MAD-based robust std
+    mad = np.nanmedian(np.abs(image - med))
+    std = 1.4826 * mad
+    if std <= 0:
+        return True
+    peakSnr = peakFlux / std
+    return peakSnr < peakSnrMin

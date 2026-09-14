@@ -30,11 +30,12 @@ import lsst.utils.tests
 from lsst.daf.butler import Butler
 from lsst.meas.algorithms.stamps import Stamps
 from lsst.summit.utils.butlerUtils import makeDefaultButler
+from lsst.summit.utils.guiders.detection import GuiderStarTrackerConfig, isBlankImage
 from lsst.summit.utils.guiders.metrics import GuiderMetricsBuilder
 from lsst.summit.utils.guiders.plotting import GuiderPlotter
 from lsst.summit.utils.guiders.reading import GuiderData, GuiderReader
 from lsst.summit.utils.guiders.seeing import CorrelationAnalysis, GuiderSeeing
-from lsst.summit.utils.guiders.tracking import GuiderStarTracker
+from lsst.summit.utils.guiders.tracking import GuiderStarTracker, _diagnoseQualityCutRejections
 from lsst.summit.utils.utils import getSite
 
 
@@ -284,6 +285,101 @@ class GuiderTestCase(unittest.TestCase):
 
         seeing = analysis.measureTomographicSeeing()
         self.assertIsInstance(seeing, GuiderSeeing)
+
+
+class IsBlankImageTestCase(unittest.TestCase):
+    """Pure-function tests for isBlankImage (no butler)."""
+
+    def test_blank_image_is_blank(self) -> None:
+        rng = np.random.default_rng(0)
+        image = 1000 + rng.normal(0, 2, (50, 50))
+        self.assertTrue(isBlankImage(image))
+
+    def test_bright_source_fails_flux_check(self) -> None:
+        rng = np.random.default_rng(0)
+        image = 1000 + rng.normal(0, 2, (50, 50))
+        image[25, 25] += 1000
+        self.assertFalse(isBlankImage(image, fluxMin=300))
+
+    def test_faint_source_caught_by_snr_check(self) -> None:
+        # Peak well under fluxMin, but many sigma above the noise -> not blank.
+        rng = np.random.default_rng(0)
+        image = 1000 + rng.normal(0, 1, (50, 50))
+        image[25, 25] += 50
+        self.assertFalse(isBlankImage(image, fluxMin=300, peakSnrMin=5.0))
+
+    def test_zero_std_is_blank(self) -> None:
+        image = np.full((10, 10), 5.0)
+        self.assertTrue(isBlankImage(image))
+
+
+class DiagnoseQualityCutRejectionsTestCase(unittest.TestCase):
+    """Pure-function tests for _diagnoseQualityCutRejections (no butler)."""
+
+    def setUp(self) -> None:
+        self.config = GuiderStarTrackerConfig()
+        self.shape = (400.0, 400.0)
+
+    def test_low_snr_reported(self) -> None:
+        stars = pd.DataFrame(
+            {
+                "snr": [1.0],
+                "flux": [100.0],
+                "flux_err": [10.0],
+                "e1": [0.0],
+                "e2": [0.0],
+                "xroi": [200.0],
+                "yroi": [200.0],
+            }
+        )
+        reasons = _diagnoseQualityCutRejections(stars, self.shape, self.config)
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("snr=", reasons[0])
+
+    def test_high_ellipticity_reported(self) -> None:
+        stars = pd.DataFrame(
+            {
+                "snr": [50.0],
+                "flux": [100.0],
+                "flux_err": [10.0],
+                "e1": [0.9],
+                "e2": [0.0],
+                "xroi": [200.0],
+                "yroi": [200.0],
+            }
+        )
+        reasons = _diagnoseQualityCutRejections(stars, self.shape, self.config)
+        self.assertIn("e=", reasons[0])
+
+    def test_edge_position_reported(self) -> None:
+        stars = pd.DataFrame(
+            {
+                "snr": [50.0],
+                "flux": [100.0],
+                "flux_err": [10.0],
+                "e1": [0.0],
+                "e2": [0.0],
+                "xroi": [1.0],
+                "yroi": [1.0],
+            }
+        )
+        reasons = _diagnoseQualityCutRejections(stars, self.shape, self.config)
+        self.assertIn("edge", reasons[0])
+
+    def test_passing_star_has_no_reason_string(self) -> None:
+        stars = pd.DataFrame(
+            {
+                "snr": [50.0],
+                "flux": [100.0],
+                "flux_err": [10.0],
+                "e1": [0.0],
+                "e2": [0.0],
+                "xroi": [200.0],
+                "yroi": [200.0],
+            }
+        )
+        reasons = _diagnoseQualityCutRejections(stars, self.shape, self.config)
+        self.assertEqual(reasons[0], "?")
 
 
 class TestMemory(lsst.utils.tests.MemoryTestCase):
