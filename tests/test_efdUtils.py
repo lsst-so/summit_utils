@@ -28,6 +28,7 @@ from typing import Any
 
 import astropy
 import pandas as pd
+import pytest
 from astropy.time import Time
 from utils import getVcr
 
@@ -53,11 +54,11 @@ try:
 except ImportError:
     HAS_EFD_CLIENT = False
 
-vcr = getVcr()
+classVcr = getVcr()
 
 
 @unittest.skipIf(not HAS_EFD_CLIENT, "No EFD client available")
-@vcr.use_cassette()
+@pytest.mark.vcr
 class EfdUtilsTestCase(lsst.utils.tests.TestCase):
     # class attributes populated in setUpClass
     client: Any
@@ -67,7 +68,7 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
     event: TMAEvent
 
     @classmethod
-    @vcr.use_cassette()
+    @classVcr.use_cassette()
     def setUpClass(cls) -> None:
         try:
             cls.client = makeEfdClient(testing=True)
@@ -91,17 +92,14 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
             _endRow=255,
         )
 
-    @vcr.use_cassette()
     def tearDown(self) -> None:
         loop = asyncio.get_event_loop()
         if self.client.influx_client is not None:
             loop.run_until_complete(self.client.influx_client.close())
 
-    @vcr.use_cassette()
     def test_makeEfdClient(self) -> None:
         self.assertIsInstance(self.client, lsst_efd_client.efd_helper.EfdClient)
 
-    @vcr.use_cassette()
     def test_getTopics(self) -> None:
         topics = getTopics(self.client, "lsst.sal.MTMount*")
         self.assertIsInstance(topics, list)
@@ -121,7 +119,6 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertIsInstance(topics, list)
         self.assertEqual(len(topics), 0)
 
-    @vcr.use_cassette()
     def test_getEfdData(self) -> None:
         dayStart = getDayObsStartTime(self.dayObs)
         dayEnd = getDayObsEndTime(self.dayObs)
@@ -180,7 +177,6 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
             # good query, except the topic doesn't exist
             _ = getEfdData(self.client, "badTopic", begin=dayStart, end=dayEnd)
 
-    @vcr.use_cassette()
     def test_raiseIfTopicNotInSchema(self) -> None:
         dayStart = getDayObsStartTime(self.dayObs)
         dayEnd = getDayObsEndTime(self.dayObs)
@@ -193,7 +189,6 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
             # test this does raise, as raiseIfTopicNotInSchema defaults to True
             _ = getEfdData(self.client, badTopic, begin=dayStart, end=dayEnd)
 
-    @vcr.use_cassette()
     def test_getMostRecentRowWithDataBefore(self) -> None:
         time = Time(1687845854.736784, scale="utc", format="unix")
         rowData = getMostRecentRowWithDataBefore(
@@ -215,7 +210,6 @@ class EfdUtilsTestCase(lsst.utils.tests.TestCase):
         self.assertIsInstance(efdTimestamp, float)
         return
 
-    @vcr.use_cassette()
     def test_clipDataToEvent(self) -> None:
         # get 10 mins of data either side of the event we'll clip to
         duration = datetime.timedelta(seconds=10 * 60)

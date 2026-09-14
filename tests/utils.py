@@ -23,27 +23,49 @@ import os
 
 import vcr
 
-__all__ = ("getVcr",)
+__all__ = ("CASSETTE_DIR", "VCR_CONFIG", "getVcr")
+
+# The single source of truth for how cassettes are recorded and matched. It is
+# consumed by pytest-recording via the fixtures in ``conftest.py`` for all test
+# methods, and by ``getVcr()`` for the ``setUpClass`` methods.
+CASSETTE_DIR = os.path.join(os.path.dirname(__file__), "data", "cassettes")
+VCR_CONFIG = {
+    "record_mode": "none",
+    # matching ignores host/port and so is independent of whether requests go
+    # through the USDF proxy or not.
+    "match_on": ["method", "path", "query", "body"],
+}
 
 
 def getVcr() -> vcr.VCR:
-    """Get a VCR object for use in tests.
+    """Get a ``vcr.VCR`` for recording ``setUpClass`` methods.
 
-    Use record_mode="none" to run tests for normal operation. To update files
-    or generate new ones, make sure you have a working connection to the EFD
-    and temporarily run with mode="all" via *both* python/pytest *and* with
-    scons, as these generate slightly different HTTP requests for some reason.
-    Also make sure to do this at the summit (USDF coverage is provided by the
-    same recording, since matching ignores host/port and so is independent of
-    whether requests go through a proxy). The TTS is explicitly skipped and
-    does not need to follow this procedure.
+    Test methods (and their ``setUp``/``tearDown``) are handled by the VCR
+    pytest plugin (``pytest-recording``, or ``pytest-vcr`` in older
+    environments - see ``conftest.py``), via ``@pytest.mark.vcr`` on the test
+    class. The plugin installs cassettes through a per-test fixture, so it
+    cannot cover ``setUpClass``, which runs before any per-test fixture. For
+    that case, use the returned object as ``@classVcr.use_cassette()``, which
+    uses the same configuration and cassette directory as the plugin. This can
+    also be nested inside the plugin's cassette to record a ``setUp`` method
+    separately from its tests.
+
+    Cassettes live in ``tests/data/cassettes`` and are named after the bare
+    function name (``setUpClass.yaml``, ``test_getEfdData.yaml``, ...). They
+    are shared between test modules, so ``setUpClass.yaml`` holds the
+    recordings for every module's ``setUpClass``.
+
+    To update the cassettes or generate new ones, make sure you have a working
+    connection to the EFD and run with ``pytest --record-mode=all`` (or
+    ``--vcr-record=all`` when using ``pytest-vcr``), both
+    via pytest directly and via scons, as these generate slightly different
+    HTTP requests for some reason. Also make sure to do this at the summit
+    (USDF coverage is provided by the same recording, since matching ignores
+    host/port and so is independent of whether requests go through a proxy).
+    The TTS is explicitly skipped and does not need to follow this procedure.
     """
-    dirname = os.path.dirname(__file__)
-    cassette_library_dir = os.path.join(dirname, "data", "cassettes")
-    safe_vcr = vcr.VCR(
-        record_mode="none",
-        cassette_library_dir=cassette_library_dir,
+    return vcr.VCR(
+        cassette_library_dir=CASSETTE_DIR,
         path_transformer=vcr.VCR.ensure_suffix(".yaml"),
-        match_on=["method", "path", "query", "body"],
+        **VCR_CONFIG,
     )
-    return safe_vcr
