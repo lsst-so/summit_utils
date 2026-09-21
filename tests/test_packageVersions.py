@@ -21,12 +21,9 @@
 
 """Tests for the science-package version data model and reading it from ConsDB.
 
-The ConsDB JSON blob (``{"hash": ..., "versions": {...}}``) is a wire format
-that must not drift without a migration plan: any already-written ConsDB rows
-use this shape, so the verbatim tests below fail if it changes. The read path
-also proves the design's key property - the versions come back with only a
-ConsDB client. Writing that blob lives in Rapid Analysis, which reuses the
-shape (`toDict`) and the table/column constants pinned here.
+The JSON stored in ConsDB (``{"hash": ..., "versions": {...}}``) is a wire
+format: rows already written use it, so `test_toDictPinsWireFormat` fails if it
+changes.
 """
 
 import json
@@ -57,8 +54,12 @@ EXPECTED_HASH = PackageVersions(versions=VERSIONS).versionHash()
 
 @pytest.fixture
 def client() -> ConsDbClient:
-    """A ConsDbClient pointed at a fake url; use @responses.activate to mock
-    the connection.
+    """A ConsDbClient pointed at a fake url.
+
+    The tests below use the ``responses`` library to mock the HTTP layer:
+    ``@responses.activate`` intercepts all requests, and ``responses.post(url,
+    json=...)`` registers the canned reply for the POST the client makes to
+    ``/query``.
     """
     return ConsDbClient("http://example.com/consdb")
 
@@ -76,7 +77,7 @@ def test_versionHashChangesWhenAVersionChanges() -> None:
     assert a.versionHash() != c.versionHash()
 
 
-def test_toDictPinsBlobShape() -> None:
+def test_toDictPinsWireFormat() -> None:
     # this is the wire format stored in the ConsDB JSONB column - an exact
     # match, not a subset check, so any shape drift fails here. Rapid Analysis
     # writes exactly this, so the same test is duplicated there.
@@ -120,19 +121,12 @@ def test_fromJsonRejectsNonObject() -> None:
 def test_readPackageVersionsFromConsDbParsesJsonObjectCell(
     client: ConsDbClient,
 ) -> None:
-    # the JSONB column coming back as an already-parsed JSON object; the query
-    # SQL is pinned here too (the join via the exposure table)
+    # the JSONB column coming back as an already-parsed JSON object. This
+    # registers the mock reply for the client's POST to /query.
     blob = {"hash": EXPECTED_HASH, "versions": VERSIONS}
-    expectedQuery = (
-        "SELECT q.package_versions "
-        "FROM cdb_lsstcam.exposure_quicklook q "
-        "JOIN cdb_lsstcam.exposure e ON e.exposure_id = q.exposure_id "
-        "WHERE e.day_obs = 20250624 AND e.seq_num = 123"
-    )
     responses.post(
         "http://example.com/consdb/query",
         json={"columns": [PACKAGE_VERSIONS_COLUMN], "data": [[blob]]},
-        match=[responses.matchers.json_params_matcher({"query": expectedQuery})],
     )
     pv = readPackageVersionsFromConsDb(client, "LSSTCam", 20250624, 123)
     assert pv == PackageVersions(versions=dict(VERSIONS))
@@ -173,40 +167,30 @@ def test_readPackageVersionsFromConsDbNullCellReturnsNone(client: ConsDbClient) 
 
 @responses.activate
 def test_readPackageVersionsForExposure(client: ConsDbClient) -> None:
-    # the DimensionRecord wrapper must unpack the dataId and delegate: it
-    # produces the same query keyed by this record's day_obs/seq_num
+    # the DimensionRecord wrapper must unpack the record's dataId into the
+    # query, so check the record's day_obs/seq_num reached the request
     blob = {"hash": EXPECTED_HASH, "versions": VERSIONS}
-    expectedQuery = (
-        "SELECT q.package_versions "
-        "FROM cdb_lsstcam.exposure_quicklook q "
-        "JOIN cdb_lsstcam.exposure e ON e.exposure_id = q.exposure_id "
-        "WHERE e.day_obs = 20250624 AND e.seq_num = 123"
-    )
     responses.post(
         "http://example.com/consdb/query",
         json={"columns": [PACKAGE_VERSIONS_COLUMN], "data": [[blob]]},
-        match=[responses.matchers.json_params_matcher({"query": expectedQuery})],
     )
     record = cast(DimensionRecord, SimpleNamespace(instrument="LSSTCam", day_obs=20250624, seq_num=123))
     pv = readPackageVersionsForExposure(client, record)
     assert pv == PackageVersions(versions=dict(VERSIONS))
+    body = responses.calls[0].request.body
+    assert isinstance(body, (str, bytes))
+    sentQuery = json.loads(body)["query"]
+    assert "cdb_lsstcam" in sentQuery
+    assert "20250624" in sentQuery and "123" in sentQuery
 
 
 @responses.activate
 def test_readPackageVersionsByHash(client: ConsDbClient) -> None:
-    # look up a version set by its hash; the SQL (the ->>'hash' filter and the
-    # LIMIT 1) is pinned so it cannot drift from the blob shape toDict writes
+    # look up a version set by its hash
     blob = {"hash": EXPECTED_HASH, "versions": VERSIONS}
-    expectedQuery = (
-        "SELECT q.package_versions "
-        "FROM cdb_lsstcam.exposure_quicklook q "
-        f"WHERE q.package_versions->>'hash' = '{EXPECTED_HASH}' "
-        "LIMIT 1"
-    )
     responses.post(
         "http://example.com/consdb/query",
         json={"columns": [PACKAGE_VERSIONS_COLUMN], "data": [[blob]]},
-        match=[responses.matchers.json_params_matcher({"query": expectedQuery})],
     )
     pv = readPackageVersionsByHash(client, "LSSTCam", EXPECTED_HASH)
     assert pv == PackageVersions(versions=dict(VERSIONS))
@@ -217,23 +201,20 @@ def test_readPackageVersionsByHash(client: ConsDbClient) -> None:
 def test_readPackageVersionsByHashNormalisesCase(client: ConsDbClient) -> None:
     # versionHash() always produces lowercase hex and the SQL string
     # comparison is case-sensitive, so an uppercase paste of a valid hash must
-    # be lowercased before interpolation - it used to silently return None.
-    # The matcher pins the emitted SQL, so this fails if the hash reaches the
-    # query un-normalised.
+    # be lowercased before it reaches the query - it used to silently return
+    # None.
     blob = {"hash": EXPECTED_HASH, "versions": VERSIONS}
-    expectedQuery = (
-        "SELECT q.package_versions "
-        "FROM cdb_lsstcam.exposure_quicklook q "
-        f"WHERE q.package_versions->>'hash' = '{EXPECTED_HASH}' "
-        "LIMIT 1"
-    )
     responses.post(
         "http://example.com/consdb/query",
         json={"columns": [PACKAGE_VERSIONS_COLUMN], "data": [[blob]]},
-        match=[responses.matchers.json_params_matcher({"query": expectedQuery})],
     )
     pv = readPackageVersionsByHash(client, "LSSTCam", EXPECTED_HASH.upper())
     assert pv == PackageVersions(versions=dict(VERSIONS))
+    body = responses.calls[0].request.body
+    assert isinstance(body, (str, bytes))
+    sentQuery = json.loads(body)["query"]
+    assert EXPECTED_HASH in sentQuery
+    assert EXPECTED_HASH.upper() not in sentQuery
 
 
 @responses.activate

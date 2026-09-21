@@ -42,11 +42,9 @@ the stable identity, handy as a SQL-side join/dedup key. The blob shape is
 Rapid Analysis; change it only with a migration plan for the rows already
 written.
 
-This module is deliberately read-only with respect to ConsDB: it is the data
-model plus `readPackageVersionsFromConsDb`, so an ordinary user can recover the
-versions with nothing but a ConsDB client. Scraping the versions and writing
-them to ConsDB both live in Rapid Analysis, which reuses the shape (`toDict`)
-and the table/column constants here, so the two sides cannot drift.
+Scraping the versions and writing them to ConsDB both live in Rapid Analysis
+(the write goes through its ``ConsDBPopulator``), reusing `toDict` and the
+table/column constants here so the two sides cannot drift.
 """
 
 from __future__ import annotations
@@ -148,28 +146,28 @@ class PackageVersions:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def toDict(self) -> dict[str, Any]:
-        """Render as the JSON blob dict stored in the ConsDB column.
+        """Render as the dict that is stored as JSON in the ConsDB column.
 
         Returns
         -------
-        blobDict : `dict` [`str`, `Any`]
-            The pinned wire shape: ``{"hash": ..., "versions": {...}}``.
-            ``versions`` is inline so the blob is self-contained; ``hash`` is
-            included as a stable SQL-side identity/dedup key.
+        data : `dict` [`str`, `Any`]
+            ``{"hash": ..., "versions": {...}}``. ``versions`` is inline so
+            the record is self-contained; ``hash`` is included as a SQL-side
+            join/dedup key.
         """
         return {"hash": self.versionHash(), "versions": dict(self.versions)}
 
     @classmethod
-    def fromDict(cls, blobDict: Mapping[str, Any]) -> PackageVersions:
-        """Build from the JSON blob dict stored in the ConsDB column.
+    def fromDict(cls, data: Mapping[str, Any]) -> PackageVersions:
+        """Build from the dict form of the ConsDB column (see `toDict`).
 
         The ``hash`` key, if present, is ignored: ``versions`` is the source of
         truth and the hash is derived from it (recompute with `versionHash`).
 
         Parameters
         ----------
-        blobDict : `Mapping` [`str`, `Any`]
-            The blob, as produced by `toDict`.
+        data : `Mapping` [`str`, `Any`]
+            The dict, as produced by `toDict`.
 
         Returns
         -------
@@ -179,11 +177,11 @@ class PackageVersions:
         Raises
         ------
         ValueError
-            Raised if the blob has no ``versions`` key.
+            Raised if there is no ``versions`` key.
         """
-        if "versions" not in blobDict:
-            raise ValueError(f"Package-version blob has no 'versions' key: {dict(blobDict)!r}")
-        return cls(versions=dict(blobDict["versions"]))
+        if "versions" not in data:
+            raise ValueError(f"Package-version dict has no 'versions' key: {dict(data)!r}")
+        return cls(versions=dict(data["versions"]))
 
     def toJson(self) -> str:
         """Render as a canonical JSON string.
@@ -191,8 +189,8 @@ class PackageVersions:
         Returns
         -------
         jsonString : `str`
-            The `toDict` blob serialised with sorted keys, so identical version
-            sets always serialise identically.
+            The `toDict` dict serialised with sorted keys, so identical
+            version sets always serialise identically.
         """
         return json.dumps(self.toDict(), sort_keys=True)
 
@@ -214,11 +212,11 @@ class PackageVersions:
         ------
         ValueError
             Raised if the document is not valid JSON, or parses to something
-            other than the expected blob shape.
+            other than a JSON object with a ``versions`` key.
         """
         parsed = json.loads(jsonString)
         if not isinstance(parsed, dict):
-            raise ValueError(f"Expected a JSON object for a package-version blob, got {type(parsed)}")
+            raise ValueError(f"Expected a JSON object for package versions, got {type(parsed)}")
         return cls.fromDict(parsed)
 
 
@@ -285,7 +283,7 @@ def readPackageVersionsFromConsDb(
             f"Got {len(result)} package-version rows for {instrument} ({dayObs=}, {seqNum=});"
             " expected at most one"
         )
-    return _packageVersionsFromCell(result[column][0], column)
+    return _parsePackageVersions(result[column][0])
 
 
 def readPackageVersionsForExposure(
@@ -391,37 +389,35 @@ def readPackageVersionsByHash(
     result = client.query(query)
     if len(result) == 0:
         return None
-    return _packageVersionsFromCell(result[column][0], column)
+    return _parsePackageVersions(result[column][0])
 
 
-def _packageVersionsFromCell(cell: Any, column: str) -> PackageVersions | None:
-    """Parse a ConsDB ``package_versions`` cell into a `PackageVersions`.
+def _parsePackageVersions(value: Any) -> PackageVersions | None:
+    """Parse a ``package_versions`` column value into a `PackageVersions`.
 
     Tolerant of how the JSONB column is delivered over the query API: a null
-    (or masked) cell yields `None`, an already-parsed JSON object or a JSON
+    (or masked) value yields `None`, an already-parsed JSON object or a JSON
     string both yield a `PackageVersions`.
 
     Parameters
     ----------
-    cell : `Any`
-        The raw cell value from the query result.
-    column : `str`
-        The column name, for the error message only.
+    value : `Any`
+        The raw value from the query result.
 
     Returns
     -------
     packageVersions : `PackageVersions` or `None`
-        The parsed versions, or `None` if the cell is null.
+        The parsed versions, or `None` if the value is null.
 
     Raises
     ------
     TypeError
-        Raised if the cell value is of an unexpected type.
+        Raised if the value is of an unexpected type.
     """
-    if cell is None or cell is np.ma.masked:
+    if value is None or value is np.ma.masked:
         return None
-    if isinstance(cell, (str, bytes)):
-        return PackageVersions.fromJson(cell)
-    if isinstance(cell, Mapping):
-        return PackageVersions.fromDict(cell)
-    raise TypeError(f"Unexpected type for the {column} column: {type(cell)}")
+    if isinstance(value, (str, bytes)):
+        return PackageVersions.fromJson(value)
+    if isinstance(value, Mapping):
+        return PackageVersions.fromDict(value)
+    raise TypeError(f"Unexpected type for package versions: {type(value)}")
