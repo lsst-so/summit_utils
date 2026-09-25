@@ -32,7 +32,7 @@ need to consume the data: everything needed to read a record back is carried in
 ConsDB and this package, so a consumer can recover the full versions with only
 this module and a ConsDB client.
 
-The JSON blob stored in the ConsDB ``package_versions`` column is::
+The JSON blob stored in the ConsDB ``ra_package_versions`` column is::
 
     {"hash": "<sha256hex>", "versions": {"ts_wep": "v17.6.1-alpha", ...}}
 
@@ -90,7 +90,7 @@ UNKNOWN_VERSION = "unknown"
 # function that uses them so they can be corrected without code changes if
 # the schema lands elsewhere.
 PACKAGE_VERSIONS_TABLE = "exposure_quicklook"
-PACKAGE_VERSIONS_COLUMN = "package_versions"
+PACKAGE_VERSIONS_COLUMN = "ra_package_versions"
 
 # Everything interpolated into raw SQL by readPackageVersionsFromConsDb must
 # look like a plain identifier; anything else is rejected.
@@ -393,7 +393,7 @@ def readPackageVersionsByHash(
 
 
 def _parsePackageVersions(value: Any) -> PackageVersions | None:
-    """Parse a ``package_versions`` column value into a `PackageVersions`.
+    """Parse a ``ra_package_versions`` column value into a `PackageVersions`.
 
     Tolerant of how the JSONB column is delivered over the query API: a null
     (or masked) value yields `None`, an already-parsed JSON object or a JSON
