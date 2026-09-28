@@ -105,8 +105,10 @@ def calculateMountErrors(
     client: EfdClient,
     maxDelta: float = 0.1,
     doFilterResiduals: bool = False,
-    useMockPointingModelResidualsAboveAzEl: float = 100.0,
-    useMockPointingModelResidualsAboveRot: float = 15.0,
+    useMockPointingModelRMSAboveAzEl: float = 10.0,
+    useMockPointingModelRMSAboveRot: float = 15.0,
+    useMockPointingModelMaxAboveAzEl: float = 10.0,
+    useMockPointingModelMaxAboveRot: float = 10.0,
 ) -> tuple[MountErrors, MountData] | tuple[None, None]:
     """Queries the EFD over a given exposure and calculates the RMS errors
     for the axes, optionally using a pointing model to calculate residuals.
@@ -121,12 +123,18 @@ def calculateMountErrors(
         The maximum delta for filtering bad values, by default 0.1.
     doFilterResiduals : `bool`, optional
         Whether to filter residuals.
-    useMockPointingModelResidualsAboveAzEl : `float`, optional
+    useMockPointingModelRMSAboveAzEl : `float`, optional
         The threshold above which to use the mock pointing model residuals, as
         an RMS, in arcseconds, for the azimuth and elevation axes.
-    useMockPointingModelResidualsAboveRot : `float`, optional
+    useMockPointingModelRMSAboveRot : `float`, optional
         The threshold above which to use the mock pointing model residuals, as
         an RMS, in arcseconds, for the rotator.
+    useMockPointingModelMaxAboveAzEl : `float`, optional
+        The threshold above which to use the mock pointing model residuals, as
+        a maximum, in arcseconds, for the azimuth and elevation axes.
+    useMockPointingModelMaxAboveRot : `float`, optional
+        The threshold above which to use the mock pointing model residuals, as
+        a maximum, in arcseconds, for the rotator.
 
     Returns
     -------
@@ -174,11 +182,19 @@ def calculateMountErrors(
     azModelValues -= azModelMedian - azMedian
     azimuthData["linearModel"] = azModelValues
     azLinearError = (azValues - azModelValues) * 3600
+    azLinearMaxError = max(abs(azLinearError))
     azLinearRms = np.sqrt(np.mean(azLinearError * azLinearError))
-    if azLinearRms > useMockPointingModelResidualsAboveAzEl:
+    if azLinearRms > useMockPointingModelRMSAboveAzEl:
         logger.warning(
             f"Azimuth pointing model RMS error {azLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        azimuthData["azError"] = azLinearError
+    if  azLinearMaxError > useMockPointingModelMaxAboveAzEl:
+        logger.warning(
+            f"Azimuth max pointing model error {azLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveAzEl:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         azimuthData["azError"] = azLinearError
@@ -191,11 +207,19 @@ def calculateMountErrors(
     elModelValues -= elModelMedian - elMedian
     elevationData["linearModel"] = elModelValues
     elLinearError = (elValues - elModelValues) * 3600
+    elLinearMaxError = max(abs(elLinearError))
     elLinearRms = np.sqrt(np.mean(elLinearError * elLinearError))
-    if elLinearRms > useMockPointingModelResidualsAboveAzEl:
+    if elLinearRms > useMockPointingModelRMSAboveAzEl:
         logger.warning(
             f"Elevation pointing model RMS error {elLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        elevationData["elError"] = elLinearError
+    if  elLinearMaxError > useMockPointingModelMaxAboveAzEl:
+        logger.warning(
+            f"Elevation max pointing model error {elLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveAzEl:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         elevationData["elError"] = elLinearError
@@ -209,11 +233,19 @@ def calculateMountErrors(
     rotModelValues = rotMedian + rotRate * (rotValTimes - rotTimesMedian)
     rotationData["linearModel"] = rotModelValues
     rotLinearError = (rotValues - rotModelValues) * 3600
+    rotLinearMaxError = max(abs(rotLinearError))
     rotLinearRms = np.sqrt(np.mean(rotLinearError * rotLinearError))
-    if rotLinearRms > useMockPointingModelResidualsAboveRot:
+    if rotLinearRms > useMockPointingModelRMSAboveRot:
         logger.warning(
             f"Rotation pointing model RMS error {rotLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveRot:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        rotationData["rotError"] = rotLinearError
+    if  rotLinearMaxError > useMockPointingModelMaxAboveRot:
+        logger.warning(
+            f"Rotation max pointing model error {rotLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveRot:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         rotationData["rotError"] = rotLinearError
