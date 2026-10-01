@@ -42,6 +42,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
+from astropy.time import Time, TimeDelta
 from matplotlib.dates import num2date
 from matplotlib.ticker import FuncFormatter
 
@@ -52,7 +53,6 @@ from lsst.utils.plotting.figures import make_figure
 from .mountData import getAzElRotHexDataForExposure
 
 if TYPE_CHECKING:
-    from astropy.time import Time
     from lsst_efd_client import EfdClient
     from matplotlib.figure import Figure
 
@@ -166,12 +166,7 @@ def calculateMountErrors(
         mountData.elevationData["elError"] = elError
 
     # Calculate the linear demand model
-    if len(mountData.azimuthData) == len(mountData.elevationData):
-        azModelValues, elModelValues = getAltAzOverPeriod(expRecord, nPoints=len(mountData.azimuthData))
-    else:
-        azModelValues, _ = getAltAzOverPeriod(expRecord, nPoints=len(mountData.azimuthData))
-        _, elModelValues = getAltAzOverPeriod(expRecord, nPoints=len(mountData.elevationData))
-
+    azModelValues, elModelValues = getAltAzOverPeriod(expRecord, mountData)
     _, _, rotRate = getLinearRates(expRecord)
 
     azimuthData = mountData.azimuthData
@@ -675,7 +670,7 @@ def getLinearRates(expRecord: DimensionRecord) -> tuple[float, float, float]:
 
 def getAltAzOverPeriod(
     expRecord: DimensionRecord,
-    nPoints: int,
+    mountData: MountData,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Get the AltAz coordinates over a period.
 
@@ -683,12 +678,8 @@ def getAltAzOverPeriod(
     ----------
     begin : `Time`
         The beginning of the period.
-    end : `Time`
-        The end of the period.
     target : `SkyCoord`
         The sky coordinates to track.
-    nPoints : `int`, optional
-        The number of points to sample, by default 100.
 
     Returns
     -------
@@ -696,17 +687,23 @@ def getAltAzOverPeriod(
         The azimuth and elevation coordinates in degrees.
     """
     begin = expRecord.timespan.begin
-    end = expRecord.timespan.end
-    times = begin + (end - begin) * np.linspace(0, 1, nPoints)
+    azTimes = mountData.azimuthData.actualPositionTimestamp.values / 86400.0
+    azTimes -= azTimes[0]
+    azTimes = begin + TimeDelta(azTimes, format='jd')
+    elTimes = mountData.elevationData.actualPositionTimestamp.values / 86400.0
+    elTimes -= elTimes[0]
+    elTimes = begin + TimeDelta(elTimes, format='jd')
     target = SkyCoord(expRecord.tracking_ra * u.deg, expRecord.tracking_dec * u.deg)
-    altAzFrame = AltAz(obstime=times, location=SIMONYI_LOCATION)
-    targetAltAz = target.transform_to(altAzFrame)
-    az = targetAltAz.az
+    azAltAzFrame = AltAz(obstime=azTimes, location=SIMONYI_LOCATION)
+    azTargetAltAz = target.transform_to(azAltAzFrame)
+    elAltAzFrame = AltAz(obstime=elTimes, location=SIMONYI_LOCATION)
+    elTargetAltAz = target.transform_to(elAltAzFrame)
+    az = azTargetAltAz.az
     if abs(az[0].degree) < 90.0:
         az_wrapped = az.wrap_at(180.0 * u.deg)
     else:
         az_wrapped = az.wrap_at(0.0 * u.deg)
-    return az_wrapped.degree, targetAltAz.alt.degree
+    return az_wrapped.degree, elTargetAltAz.alt.degree
 
 
 def calculateHexRms(mountData: MountData) -> tuple[float, float]:
