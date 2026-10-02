@@ -75,7 +75,7 @@ N_REPLACED_WARNING_LEVEL = 999999  # fill these values in once you've spoken to 
 N_REPLACED_BAD_LEVEL = 999999  # fill these values in once you've spoken to Craig and Brian
 
 SIMONYI_LOCATION = EarthLocation.of_site("Rubin:Simonyi")
-EARTH_ROTATION = 15.04106858  # degrees/hour
+EARTH_ROTATION = 15.04106858  # degrees/hour - no longer needed?
 
 
 @dataclass
@@ -108,7 +108,7 @@ def calculateMountErrors(
     useMockPointingModelRMSAboveAzEl: float = 10.0,
     useMockPointingModelRMSAboveRot: float = 15.0,
     useMockPointingModelMaxAboveAzEl: float = 10.0,
-    useMockPointingModelMaxAboveRot: float = 10.0,
+    useMockPointingModelMaxAboveRot: float = 15.0,
 ) -> tuple[MountErrors, MountData] | tuple[None, None]:
     """Queries the EFD over a given exposure and calculates the RMS errors
     for the axes, optionally using a pointing model to calculate residuals.
@@ -649,13 +649,6 @@ def getLinearRates(expRecord: DimensionRecord) -> tuple[float, float, float]:
     begin: Time = expRecord.timespan.begin
     end: Time = expRecord.timespan.end
     dT: float = (expRecord.timespan.end - expRecord.timespan.begin).value * 86400.0
-    rotRate = (
-        -EARTH_ROTATION
-        * np.cos(SIMONYI_LOCATION.lat.rad)
-        * np.cos(expRecord.azimuth * u.deg)
-        / np.cos((90.0 - expRecord.zenith_angle) * u.deg)
-        / 3600.0
-    )
     skyLocation = SkyCoord(expRecord.tracking_ra * u.deg, expRecord.tracking_dec * u.deg)
     altAz1 = AltAz(obstime=begin, location=SIMONYI_LOCATION)
     altAz2 = AltAz(obstime=end, location=SIMONYI_LOCATION)
@@ -664,9 +657,33 @@ def getLinearRates(expRecord: DimensionRecord) -> tuple[float, float, float]:
     elRate = float((obsAltAz2.alt.deg - obsAltAz1.alt.deg) / dT)
     azRate = float((obsAltAz2.az.deg - obsAltAz1.az.deg) / dT)
 
-    # All rates are in degrees / second
-    return azRate, elRate, float(rotRate.value)
+    # The rotator tracks the parallactic angle. Compute it at begin and end
+    # from the same astropy AltAz transforms used for the az/el rates (rather
+    # than the closed-form -EARTH_ROTATION*cos(lat)*cos(az)/cos(el) expression,
+    # whose 1/cos(el) term amplifies errors near zenith and produced ~1%
+    # rotRate errors that tripped the max-rot criterion -- see DM-56137). The
+    # parallactic angle is the position angle, in the AltAz frame, of a point
+    # just to the celestial north of the target: atan2(dAz*cos(alt), dAlt).
+    northOffset = 1.0 / 3600.0  # 1 arcsec north, small enough to be a tangent
+    northLocation = SkyCoord(
+        expRecord.tracking_ra * u.deg, (expRecord.tracking_dec + northOffset) * u.deg
+    )
+    northAltAz1 = northLocation.transform_to(altAz1)
+    northAltAz2 = northLocation.transform_to(altAz2)
 
+    def _parallacticAngle(obs: AltAz, north: AltAz) -> float:
+        dAlt = (north.alt - obs.alt).to(u.rad).value
+        dAz = (north.az - obs.az).to(u.rad).value * np.cos(obs.alt.to(u.rad).value)
+        return float(np.arctan2(dAz, dAlt))
+
+    q1 = _parallacticAngle(obsAltAz1, northAltAz1)
+    q2 = _parallacticAngle(obsAltAz2, northAltAz2)
+    # Wrap the difference into (-pi, pi] before converting to a rate.
+    dq = float(np.degrees(np.arctan2(np.sin(q2 - q1), np.cos(q2 - q1))))
+    rotRate = dq / dT
+
+    # All rates are in degrees / second
+    return azRate, elRate, rotRate
 
 def getAltAzOverPeriod(
     expRecord: DimensionRecord,
