@@ -42,6 +42,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
+from astropy.time import Time, TimeDelta
 from matplotlib.dates import num2date
 from matplotlib.ticker import FuncFormatter
 
@@ -52,7 +53,6 @@ from lsst.utils.plotting.figures import make_figure
 from .mountData import getAzElRotHexDataForExposure
 
 if TYPE_CHECKING:
-    from astropy.time import Time
     from lsst_efd_client import EfdClient
     from matplotlib.figure import Figure
 
@@ -75,7 +75,7 @@ N_REPLACED_WARNING_LEVEL = 999999  # fill these values in once you've spoken to 
 N_REPLACED_BAD_LEVEL = 999999  # fill these values in once you've spoken to Craig and Brian
 
 SIMONYI_LOCATION = EarthLocation.of_site("Rubin:Simonyi")
-EARTH_ROTATION = 15.04106858  # degrees/hour
+EARTH_ROTATION = 15.04106858  # degrees/hour - no longer needed?
 
 
 @dataclass
@@ -105,8 +105,10 @@ def calculateMountErrors(
     client: EfdClient,
     maxDelta: float = 0.1,
     doFilterResiduals: bool = False,
-    useMockPointingModelResidualsAboveAzEl: float = 100.0,
-    useMockPointingModelResidualsAboveRot: float = 15.0,
+    useMockPointingModelRMSAboveAzEl: float = 10.0,
+    useMockPointingModelRMSAboveRot: float = 15.0,
+    useMockPointingModelMaxAboveAzEl: float = 10.0,
+    useMockPointingModelMaxAboveRot: float = 15.0,
 ) -> tuple[MountErrors, MountData] | tuple[None, None]:
     """Queries the EFD over a given exposure and calculates the RMS errors
     for the axes, optionally using a pointing model to calculate residuals.
@@ -121,12 +123,18 @@ def calculateMountErrors(
         The maximum delta for filtering bad values, by default 0.1.
     doFilterResiduals : `bool`, optional
         Whether to filter residuals.
-    useMockPointingModelResidualsAboveAzEl : `float`, optional
+    useMockPointingModelRMSAboveAzEl : `float`, optional
         The threshold above which to use the mock pointing model residuals, as
         an RMS, in arcseconds, for the azimuth and elevation axes.
-    useMockPointingModelResidualsAboveRot : `float`, optional
+    useMockPointingModelRMSAboveRot : `float`, optional
         The threshold above which to use the mock pointing model residuals, as
         an RMS, in arcseconds, for the rotator.
+    useMockPointingModelMaxAboveAzEl : `float`, optional
+        The threshold above which to use the mock pointing model residuals, as
+        a maximum, in arcseconds, for the azimuth and elevation axes.
+    useMockPointingModelMaxAboveRot : `float`, optional
+        The threshold above which to use the mock pointing model residuals, as
+        a maximum, in arcseconds, for the rotator.
 
     Returns
     -------
@@ -158,12 +166,7 @@ def calculateMountErrors(
         mountData.elevationData["elError"] = elError
 
     # Calculate the linear demand model
-    if len(mountData.azimuthData) == len(mountData.elevationData):
-        azModelValues, elModelValues = getAltAzOverPeriod(expRecord, nPoints=len(mountData.azimuthData))
-    else:
-        azModelValues, _ = getAltAzOverPeriod(expRecord, nPoints=len(mountData.azimuthData))
-        _, elModelValues = getAltAzOverPeriod(expRecord, nPoints=len(mountData.elevationData))
-
+    azModelValues, elModelValues = getAltAzOverPeriod(expRecord, mountData)
     _, _, rotRate = getLinearRates(expRecord)
 
     azimuthData = mountData.azimuthData
@@ -174,11 +177,19 @@ def calculateMountErrors(
     azModelValues -= azModelMedian - azMedian
     azimuthData["linearModel"] = azModelValues
     azLinearError = (azValues - azModelValues) * 3600
+    azLinearMaxError = max(abs(azLinearError))
     azLinearRms = np.sqrt(np.mean(azLinearError * azLinearError))
-    if azLinearRms > useMockPointingModelResidualsAboveAzEl:
+    if azLinearRms > useMockPointingModelRMSAboveAzEl:
         logger.warning(
             f"Azimuth pointing model RMS error {azLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        azimuthData["azError"] = azLinearError
+    if  azLinearMaxError > useMockPointingModelMaxAboveAzEl:
+        logger.warning(
+            f"Azimuth max pointing model error {azLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveAzEl:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         azimuthData["azError"] = azLinearError
@@ -191,11 +202,19 @@ def calculateMountErrors(
     elModelValues -= elModelMedian - elMedian
     elevationData["linearModel"] = elModelValues
     elLinearError = (elValues - elModelValues) * 3600
+    elLinearMaxError = max(abs(elLinearError))
     elLinearRms = np.sqrt(np.mean(elLinearError * elLinearError))
-    if elLinearRms > useMockPointingModelResidualsAboveAzEl:
+    if elLinearRms > useMockPointingModelRMSAboveAzEl:
         logger.warning(
             f"Elevation pointing model RMS error {elLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        elevationData["elError"] = elLinearError
+    if  elLinearMaxError > useMockPointingModelMaxAboveAzEl:
+        logger.warning(
+            f"Elevation max pointing model error {elLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveAzEl:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         elevationData["elError"] = elLinearError
@@ -209,11 +228,19 @@ def calculateMountErrors(
     rotModelValues = rotMedian + rotRate * (rotValTimes - rotTimesMedian)
     rotationData["linearModel"] = rotModelValues
     rotLinearError = (rotValues - rotModelValues) * 3600
+    rotLinearMaxError = max(abs(rotLinearError))
     rotLinearRms = np.sqrt(np.mean(rotLinearError * rotLinearError))
-    if rotLinearRms > useMockPointingModelResidualsAboveRot:
+    if rotLinearRms > useMockPointingModelRMSAboveRot:
         logger.warning(
             f"Rotation pointing model RMS error {rotLinearRms:.3f} arcsec is above threshold of "
-            f"{useMockPointingModelResidualsAboveAzEl:.3f} arcsec, calculating errors vs astropy."
+            f"{useMockPointingModelRMSAboveRot:.3f} arcsec, calculating errors vs astropy."
+        )
+        # If linear error is large, replace demand errors with linear error
+        rotationData["rotError"] = rotLinearError
+    if  rotLinearMaxError > useMockPointingModelMaxAboveRot:
+        logger.warning(
+            f"Rotation max pointing model error {rotLinearMaxError:.3f} arcsec is above threshold of "
+            f"{useMockPointingModelMaxAboveRot:.3f} arcsec, calculating errors vs astropy."
         )
         # If linear error is large, replace demand errors with linear error
         rotationData["rotError"] = rotLinearError
@@ -622,13 +649,6 @@ def getLinearRates(expRecord: DimensionRecord) -> tuple[float, float, float]:
     begin: Time = expRecord.timespan.begin
     end: Time = expRecord.timespan.end
     dT: float = (expRecord.timespan.end - expRecord.timespan.begin).value * 86400.0
-    rotRate = (
-        -EARTH_ROTATION
-        * np.cos(SIMONYI_LOCATION.lat.rad)
-        * np.cos(expRecord.azimuth * u.deg)
-        / np.cos((90.0 - expRecord.zenith_angle) * u.deg)
-        / 3600.0
-    )
     skyLocation = SkyCoord(expRecord.tracking_ra * u.deg, expRecord.tracking_dec * u.deg)
     altAz1 = AltAz(obstime=begin, location=SIMONYI_LOCATION)
     altAz2 = AltAz(obstime=end, location=SIMONYI_LOCATION)
@@ -637,13 +657,37 @@ def getLinearRates(expRecord: DimensionRecord) -> tuple[float, float, float]:
     elRate = float((obsAltAz2.alt.deg - obsAltAz1.alt.deg) / dT)
     azRate = float((obsAltAz2.az.deg - obsAltAz1.az.deg) / dT)
 
-    # All rates are in degrees / second
-    return azRate, elRate, float(rotRate.value)
+    # The rotator tracks the parallactic angle. Compute it at begin and end
+    # from the same astropy AltAz transforms used for the az/el rates (rather
+    # than the closed-form -EARTH_ROTATION*cos(lat)*cos(az)/cos(el) expression,
+    # whose 1/cos(el) term amplifies errors near zenith and produced ~1%
+    # rotRate errors that tripped the max-rot criterion -- see DM-56137). The
+    # parallactic angle is the position angle, in the AltAz frame, of a point
+    # just to the celestial north of the target: atan2(dAz*cos(alt), dAlt).
+    northOffset = 1.0 / 3600.0  # 1 arcsec north, small enough to be a tangent
+    northLocation = SkyCoord(
+        expRecord.tracking_ra * u.deg, (expRecord.tracking_dec + northOffset) * u.deg
+    )
+    northAltAz1 = northLocation.transform_to(altAz1)
+    northAltAz2 = northLocation.transform_to(altAz2)
 
+    def _parallacticAngle(obs: AltAz, north: AltAz) -> float:
+        dAlt = (north.alt - obs.alt).to(u.rad).value
+        dAz = (north.az - obs.az).to(u.rad).value * np.cos(obs.alt.to(u.rad).value)
+        return float(np.arctan2(dAz, dAlt))
+
+    q1 = _parallacticAngle(obsAltAz1, northAltAz1)
+    q2 = _parallacticAngle(obsAltAz2, northAltAz2)
+    # Wrap the difference into (-pi, pi] before converting to a rate.
+    dq = float(np.degrees(np.arctan2(np.sin(q2 - q1), np.cos(q2 - q1))))
+    rotRate = dq / dT
+
+    # All rates are in degrees / second
+    return azRate, elRate, rotRate
 
 def getAltAzOverPeriod(
     expRecord: DimensionRecord,
-    nPoints: int,
+    mountData: MountData,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Get the AltAz coordinates over a period.
 
@@ -651,12 +695,8 @@ def getAltAzOverPeriod(
     ----------
     begin : `Time`
         The beginning of the period.
-    end : `Time`
-        The end of the period.
     target : `SkyCoord`
         The sky coordinates to track.
-    nPoints : `int`, optional
-        The number of points to sample, by default 100.
 
     Returns
     -------
@@ -664,17 +704,23 @@ def getAltAzOverPeriod(
         The azimuth and elevation coordinates in degrees.
     """
     begin = expRecord.timespan.begin
-    end = expRecord.timespan.end
-    times = begin + (end - begin) * np.linspace(0, 1, nPoints)
+    azTimes = mountData.azimuthData.actualPositionTimestamp.values / 86400.0
+    azTimes -= azTimes[0]
+    azTimes = begin + TimeDelta(azTimes, format='jd')
+    elTimes = mountData.elevationData.actualPositionTimestamp.values / 86400.0
+    elTimes -= elTimes[0]
+    elTimes = begin + TimeDelta(elTimes, format='jd')
     target = SkyCoord(expRecord.tracking_ra * u.deg, expRecord.tracking_dec * u.deg)
-    altAzFrame = AltAz(obstime=times, location=SIMONYI_LOCATION)
-    targetAltAz = target.transform_to(altAzFrame)
-    az = targetAltAz.az
+    azAltAzFrame = AltAz(obstime=azTimes, location=SIMONYI_LOCATION)
+    azTargetAltAz = target.transform_to(azAltAzFrame)
+    elAltAzFrame = AltAz(obstime=elTimes, location=SIMONYI_LOCATION)
+    elTargetAltAz = target.transform_to(elAltAzFrame)
+    az = azTargetAltAz.az
     if abs(az[0].degree) < 90.0:
         az_wrapped = az.wrap_at(180.0 * u.deg)
     else:
         az_wrapped = az.wrap_at(0.0 * u.deg)
-    return az_wrapped.degree, targetAltAz.alt.degree
+    return az_wrapped.degree, elTargetAltAz.alt.degree
 
 
 def calculateHexRms(mountData: MountData) -> tuple[float, float]:
