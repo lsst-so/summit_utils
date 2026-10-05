@@ -35,6 +35,14 @@ from lsst.summit.utils.consdbClient import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_access_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep an ``ACCESS_TOKEN`` in the environment from leaking into
+    the tests.
+    """
+    monkeypatch.delenv("ACCESS_TOKEN", raising=False)
+
+
 @pytest.fixture
 def client() -> ConsDbClient:
     """Initialize client with a fake url
@@ -178,10 +186,11 @@ def test_schema(client: ConsDbClient) -> None:
 @pytest.mark.parametrize(
     "secret, redacted",
     [
-        ("usdf:v987wefVMPz", "us***:v9***"),
-        ("u:v", "u***:v***"),
+        ("usdf:v987wefVMPz", "us***:xxxxxxx"),
+        ("u:v", "u***:xxxxxxx"),
         ("ulysses", "ul***"),
-        (":alberta94", "***:al***"),
+        (":alberta94", "***:xxxxxxx"),
+        ("x:gt-abc123", "x***:gt***"),
     ],
 )
 def test_clean_token_url_response(secret: str, redacted: str) -> None:
@@ -213,6 +222,45 @@ def test_client(client: ConsDbClient) -> None:
     assert client.connect_timeout == DEFAULT_CONNECT_TIMEOUT
     assert client.read_timeout == DEFAULT_READ_TIMEOUT
     assert client.timeout == (DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT)
+
+
+def test_no_token(client: ConsDbClient) -> None:
+    """Without a token or ACCESS_TOKEN, no Authorization header is sent."""
+    assert "Authorization" not in client.session.headers
+
+
+def test_explicit_token() -> None:
+    """A valid explicit token is sent as a Bearer token."""
+    client = ConsDbClient("http://example.com/consdb", token="gt-abc123")
+    assert client.session.headers["Authorization"] == "Bearer gt-abc123"
+
+
+def test_explicit_bad_token() -> None:
+    """An explicit token with an unknown prefix is rejected."""
+    with pytest.raises(ValueError, match="gt-"):
+        ConsDbClient("http://example.com/consdb", token="abc123")
+
+
+def test_env_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A valid ACCESS_TOKEN is used when no token is given."""
+    monkeypatch.setenv("ACCESS_TOKEN", "gt-abc123")
+    client = ConsDbClient("http://example.com/consdb")
+    assert client.session.headers["Authorization"] == "Bearer gt-abc123"
+
+
+def test_explicit_token_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit token takes precedence over ACCESS_TOKEN."""
+    monkeypatch.setenv("ACCESS_TOKEN", "gt-fromenv")
+    client = ConsDbClient("http://example.com/consdb", token="gt-explicit")
+    assert client.session.headers["Authorization"] == "Bearer gt-explicit"
+
+
+@pytest.mark.parametrize("token", ["abc123", ""])
+def test_env_bad_token_ignored(token: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An invalid or empty ACCESS_TOKEN is ignored rather than raising."""
+    monkeypatch.setenv("ACCESS_TOKEN", token)
+    client = ConsDbClient("http://example.com/consdb")
+    assert "Authorization" not in client.session.headers
 
 
 def test_timeout_override() -> None:

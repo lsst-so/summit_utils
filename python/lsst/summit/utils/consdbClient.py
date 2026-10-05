@@ -101,7 +101,11 @@ def clean_url(resp: requests.Response, *args: Any, **kwargs: Any) -> requests.Re
     """
     url = urlparse(resp.url)
     short_user = f"{url.username[:2]}***" if url.username is not None else ""
-    short_pass = f":{url.password[:2]}***" if url.password is not None else ""
+    if url.password is not None:
+        pwd = url.password
+        short_pass = ":gt***" if pwd.startswith("gt-") else ":xxxxxxx"
+    else:
+        short_pass = ""
     netloc = f"{short_user}{short_pass}@{url.hostname}"
     resp.url = url._replace(netloc=netloc).geturl()
     return resp
@@ -148,6 +152,8 @@ class ConsDbClient:
         service).
     token : `str` | `None`
         Authentication token for the RSP. The token must begin with "gt-".
+        If `None`, the ``ACCESS_TOKEN`` environment variable will be
+        checked and used if available.
     connect_timeout : `float` | `None`
         Seconds to wait for the connection to be established, defaults to
         `DEFAULT_CONNECT_TIMEOUT`.
@@ -175,6 +181,15 @@ class ConsDbClient:
         self.session.hooks["response"].append(clean_url)
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
+
+        if token is None:
+            token = os.environ.get("ACCESS_TOKEN") or None
+            if token is not None:
+                if token.startswith("gt-"):
+                    logger.debug("Using authentication token from the ACCESS_TOKEN environment variable")
+                else:
+                    token = None
+                    logger.warning("Ignoring ACCESS_TOKEN environment variable: it does not start with `gt-`")
 
         if token is not None:
             if not token.startswith("gt-"):
